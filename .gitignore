@@ -1,0 +1,4 @@
+.devdeck/
+__pycache__/
+*.pyc
+.conda/

@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DevDeck - 网页标签图标规范展示 (Favicon Sheet)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background-color: #0c1018;
+      color: #e2e8f0;
+    }
+    .font-mono {
+      font-family: 'JetBrains Mono', monospace;
+    }
+    /* Subtle dot grid pattern */
+    .bg-grid-subtle {
+      background-image: radial-gradient(rgba(169, 228, 179, 0.08) 1px, transparent 1px);
+      background-size: 24px 24px;
+    }
+  </style>
+</head>
+<body class="min-h-screen bg-grid-subtle flex flex-col items-center justify-center p-6 md:p-12 text-slate-200 selection:bg-[#a9e4b3]/20 selection:text-[#a9e4b3]">
+
+  <!-- Main Container Card -->
+  <main class="w-full max-w-4xl bg-[#141c29] border border-slate-800/80 rounded-2xl shadow-2xl overflow-hidden backdrop-blur-sm">
+
+    <!-- Top Header Bar -->
+    <header class="px-8 py-6 border-b border-slate-800/80 flex flex-wrap items-center justify-between gap-4 bg-[#101722]/80">
+      <div class="flex items-center gap-3">
+        <!-- Live Micro Favicon inline -->
+        <div class="w-8 h-8 rounded-lg overflow-hidden shrink-0 border border-slate-700/60 shadow-sm">
+          <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" class="w-full h-full block">
+            <rect width="64" height="64" rx="14" fill="#0c1018"/>
+            <!-- Integrated D + Terminal Prompt motif: Left stem + Chevron right closure -->
+            <path d="M15 15H27C37.5 15 47 22.5 47 32C47 41.5 37.5 49 27 49H15V15Z" fill="#a9e4b3"/>
+            <!-- Inner negative space cutout forming terminal chevron > -->
+            <path d="M23 23V41H27C33.5 41 39 37 39 32C39 27 33.5 23 27 23H23Z" fill="#0c1018"/>
+            <path d="M22 26L28 32L22 38H27L33 32L27 26H22Z" fill="#a9e4b3"/>
+          </svg>
+        </div>
+        <div>
+          <h1 class="text-xl font-bold tracking-tight text-white flex items-center gap-2">
+            DevDeck
+            <span class="text-xs font-normal text-[#a9e4b3] bg-[#a9e4b3]/10 border border-[#a9e4b3]/20 px-2 py-0.5 rounded-full font-mono">v1.0 Favicon</span>
+          </h1>
+          <p class="text-xs text-slate-400 mt-0.5">网页标签图标规范 / Icon Presentation Sheet</p>
+        </div>
+      </div>
+
+      <!-- Quick Spec Badges -->
+      <div class="flex items-center gap-2 font-mono text-xs">
+        <div class="flex items-center gap-1.5 bg-[#0c1018] px-2.5 py-1.5 rounded-md border border-slate-800 text-slate-300">
+          <span class="w-2.5 h-2.5 rounded-full bg-[#0c1018] border border-slate-600"></span>
+          <span>#0c1018</span>
+        </div>
+        <div class="flex items-center gap-1.5 bg-[#0c1018] px-2.5 py-1.5 rounded-md border border-slate-800 text-slate-300">
+          <span class="w-2.5 h-2.5 rounded-full bg-[#a9e4b3]"></span>
+          <span>#a9e4b3</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Presentation Body Grid -->
+    <div class="p-8 space-y-10">
+
+      <!-- Primary Section: Large Hero Icon Showcase -->
+      <section class="grid grid-cols-1 md:grid-cols-12 gap-8 items-center">
+        <!-- Hero SVG Visualizer -->
+        <div class="md:col-span-6 flex flex-col items-center justify-center p-8 bg-[#0c1018]/60 border border-slate-800/80 rounded-xl relative group">
+          <div class="absolute top-3 left-3 text-[11px] font-mono text-slate-500 uppercase tracking-wider">
+            64 × 64 viewBox (Hero Preview)
+          </div>
+
+          <!-- Master Scalable SVG (Hero 180px) -->
+          <div class="w-44 h-44 my-4 p-2 transition-transform duration-300 group-hover:scale-105">
+            <svg id="devdeck-master-logo" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" class="w-full h-full drop-shadow-xl">
+              <!-- Rounded navy square base #0c1018 -->
+              <rect width="64" height="64" rx="14" fill="#0c1018"/>
+              <!-- Outer D Silhouette in Mint #a9e4b3 -->
+              <path d="M15 15H27C37.5 15 47 22.5 47 32C47 41.5 37.5 49 27 49H15V15Z" fill="#a9e4b3"/>
+              <!-- Inner Navy Cutout #0c1018 -->
+              <path d="M23 23V41H27C33.5 41 39 37 39 32C39 27 33.5 23 27 23H23Z" fill="#0c1018"/>
+              <!-- Central Sharp Terminal Prompt Chevron > in Mint #a9e4b3 -->
+              <path d="M22 26L28 32L22 38H27L33 32L27 26H22Z" fill="#a9e4b3"/>
+            </svg>
+          </div>
+
+          <div class="text-center">
+            <span class="text-xs font-mono text-[#a9e4b3] bg-[#a9e4b3]/10 px-2.5 py-1 rounded">
+              favicon.svg
+            </span>
+          </div>
+        </div>
+
+        <!-- Design Rationale & Metric Features -->
+        <div class="md:col-span-6 space-y-4">
+          <div class="space-y-1">
+            <h2 class="text-base font-semibold text-white">设计概念：几何字母 D × 终端控制提示符</h2>
+            <p class="text-xs text-slate-400 leading-relaxed">
+              专为开发者控制面板（DevDeck）定制的极简标识。外围厚实稳重的几何 “D” 字形结构确保在 16px 视网膜与非视网膜屏幕上均拥有极高辨识度，内部嵌入终端命令行 Chevron (<code class="text-[#a9e4b3] font-mono">&gt;</code>)，象征高效的服务掌控与实时响应。
+            </p>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3 pt-2">
+            <div class="p-3 bg-[#0c1018]/50 rounded-lg border border-slate-800 text-xs">
+              <span class="text-slate-500 block mb-1">色彩约束 (Max 2 Colors)</span>
+              <div class="font-mono text-slate-200">Navy <span class="text-slate-400">#0c1018</span><br>Mint <span class="text-[#a9e4b3]">#a9e4b3</span></div>
+            </div>
+            <div class="p-3 bg-[#0c1018]/50 rounded-lg border border-slate-800 text-xs">
+              <span class="text-slate-500 block mb-1">像素栅格校准</span>
+              <div class="font-mono text-slate-200">64×64 viewBox<br>16px 极限清晰度适配</div>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-2 pt-1 text-xs text-slate-400 font-mono">
+            <svg class="w-4 h-4 text-[#a9e4b3]" viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+            </svg>
+            <span>零渐变 · 零投影 · 纯矢量路径 · 纯净导出</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Section: Multi-scale Validation Samples (16px, 32px, 64px) -->
+      <section class="border-t border-slate-800/80 pt-8">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="text-sm font-semibold text-white tracking-wide flex items-center gap-2">
+            <span>尺寸样本测试</span>
+            <span class="text-slate-500 text-xs font-mono font-normal">(16 px / 32 px / 64 px)</span>
+          </h3>
+          <span class="text-[11px] font-mono text-slate-500">1:1 Actual Pixel Size Scale</span>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+
+          <!-- 64px Sample Box -->
+          <div class="bg-[#0c1018]/50 border border-slate-800 p-5 rounded-xl flex flex-col items-center justify-between gap-4">
+            <div class="text-[11px] font-mono text-slate-400">64 px</div>
+            <div class="w-16 h-16 flex items-center justify-center p-0.5">
+              <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" class="w-16 h-16 block">
+                <rect width="64" height="64" rx="14" fill="#0c1018"/>
+                <path d="M15 15H27C37.5 15 47 22.5 47 32C47 41.5 37.5 49 27 49H15V15Z" fill="#a9e4b3"/>
+                <path d="M23 23V41H27C33.5 41 39 37 39 32C39 27 33.5 23 27 23H23Z" fill="#0c1018"/>
+                <path d="M22 26L28 32L22 38H27L33 32L27 26H22Z" fill="#a9e4b3"/>
+              </svg>
+            </div>
+            <div class="text-[11px] text-slate-500 font-mono">Retina / Touch Icon</div>
+          </div>
+
+          <!-- 32px Sample Box -->
+          <div class="bg-[#0c1018]/50 border border-slate-800 p-5 rounded-xl flex flex-col items-center justify-between gap-4">
+            <div class="text-[11px] font-mono text-slate-400">32 px</div>
+            <div class="w-16 h-16 flex items-center justify-center">
+              <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" class="w-8 h-8 block">
+                <rect width="64" height="64" rx="14" fill="#0c1018"/>
+                <path d="M15 15H27C37.5 15 47 22.5 47 32C47 41.5 37.5 49 27 49H15V15Z" fill="#a9e4b3"/>
+                <path d="M23 23V41H27C33.5 41 39 37 39 32C39 27 33.5 23 27 23H23Z" fill="#0c1018"/>
+                <path d="M22 26L28 32L22 38H27L33 32L27 26H22Z" fill="#a9e4b3"/>
+              </svg>
+            </div>
+            <div class="text-[11px] text-slate-500 font-mono">Desktop HiDPI Tab</div>
+          </div>
+
+          <!-- 16px Sample Box -->
+          <div class="bg-[#0c1018]/50 border border-slate-800 p-5 rounded-xl flex flex-col items-center justify-between gap-4">
+            <div class="text-[11px] font-mono text-slate-400">16 px</div>
+            <div class="w-16 h-16 flex items-center justify-center">
+              <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 block">
+                <rect width="64" height="64" rx="14" fill="#0c1018"/>
+                <path d="M15 15H27C37.5 15 47 22.5 47 32C47 41.5 37.5 49 27 49H15V15Z" fill="#a9e4b3"/>
+                <path d="M23 23V41H27C33.5 41 39 37 39 32C39 27 33.5 23 27 23H23Z" fill="#0c1018"/>
+                <path d="M22 26L28 32L22 38H27L33 32L27 26H22Z" fill="#a9e4b3"/>
+              </svg>
+            </div>
+            <div class="text-[11px] text-slate-500 font-mono">Standard Favicon</div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- Section: Simulated Browser Tabs (Dark & Light) -->
+      <section class="border-t border-slate-800/80 pt-8 space-y-4">
+        <div>
+          <h3 class="text-sm font-semibold text-white tracking-wide">
+            真实浏览器标签栏模拟环境 (Dark & Light Modes)
+          </h3>
+          <p class="text-xs text-slate-400 mt-0.5">验证 16px 在深色主题与浅色系统标签页中的轮廓清晰度与视觉反差</p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+
+          <!-- Simulated Dark Tab Bar -->
+          <div class="rounded-xl overflow-hidden border border-slate-800 bg-[#1e232e] shadow-md">
+            <!-- Window Control Header -->
+            <div class="px-3 py-2 bg-[#171a22] flex items-center gap-1.5 border-b border-slate-800/80">
+              <span class="w-2.5 h-2.5 rounded-full bg-[#ff5f56]"></span>
+              <span class="w-2.5 h-2.5 rounded-full bg-[#ffbd2e]"></span>
+              <span class="w-2.5 h-2.5 rounded-full bg-[#27c93f]"></span>
+              <span class="text-[10px] text-slate-500 ml-2 font-mono">Dark Browser Tab</span>
+            </div>
+
+            <!-- Tab Strip -->
+            <div class="px-3 pt-2 bg-[#171a22] flex items-center gap-1">
+              <!-- Active DevDeck Tab -->
+              <div class="flex items-center gap-2 bg-[#1e232e] px-3 py-1.5 rounded-t-lg border-t border-l border-r border-slate-700/50 max-w-[200px]">
+                <div class="w-4 h-4 shrink-0 rounded-[3px] overflow-hidden">
+                  <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" class="w-full h-full block">
+                    <rect width="64" height="64" rx="14" fill="#0c1018"/>
+                    <path d="M15 15H27C37.5 15 47 22.5 47 32C47 41.5 37.5 49 27 49H15V15Z" fill="#a9e4b3"/>
+                    <path d="M23 23V41H27C33.5 41 39 37 39 32C39 27 33.5 23 27 23H23Z" fill="#0c1018"/>
+                    <path d="M22 26L28 32L22 38H27L33 32L27 26H22Z" fill="#a9e4b3"/>
+                  </svg>
+                </div>
+                <span class="text-xs text-slate-200 truncate font-medium">DevDeck · 控制中心</span>
+                <span class="text-slate-500 hover:text-slate-300 text-xs ml-auto cursor-pointer">×</span>
+              </div>
+
+              <!-- Inactive Tab -->
+              <div class="flex items-center gap-2 px-3 py-1.5 text-xs text-slate-500 max-w-[140px] truncate">
+                <span class="w-3.5 h-3.5 rounded-full bg-slate-700/60 inline-block"></span>
+                <span>localhost:8080</span>
+              </div>
+            </div>
+
+            <!-- Fake Browser URL Bar -->
+            <div class="p-2.5 bg-[#1e232e] border-t border-slate-800 flex items-center gap-2 text-[11px] font-mono text-slate-400">
+              <span class="text-emerald-400 text-xs">🔒</span>
+              <span class="bg-[#12161f] px-2.5 py-1 rounded w-full border border-slate-800 text-slate-300">
+                https://devdeck.local:9443/services
+              </span>
+            </div>
+          </div>
+
+          <!-- Simulated Light Tab Bar -->
+          <div class="rounded-xl overflow-hidden border border-slate-300 bg-[#ffffff] shadow-md text-slate-800">
+            <!-- Window Control Header -->
+            <div class="px-3 py-2 bg-[#e8eaed] flex items-center gap-1.5 border-b border-slate-300">
+              <span class="w-2.5 h-2.5 rounded-full bg-[#ff5f56]"></span>
+              <span class="w-2.5 h-2.5 rounded-full bg-[#ffbd2e]"></span>
+              <span class="w-2.5 h-2.5 rounded-full bg-[#27c93f]"></span>
+              <span class="text-[10px] text-slate-500 ml-2 font-mono">Light Browser Tab</span>
+            </div>
+
+            <!-- Tab Strip -->
+            <div class="px-3 pt-2 bg-[#e8eaed] flex items-center gap-1">
+              <!-- Active DevDeck Tab -->
+              <div class="flex items-center gap-2 bg-[#ffffff] px-3 py-1.5 rounded-t-lg border-t border-l border-r border-slate-300/80 max-w-[200px] shadow-sm">
+                <div class="w-4 h-4 shrink-0 rounded-[3px] overflow-hidden">
+                  <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" class="w-full h-full block">
+                    <rect width="64" height="64" rx="14" fill="#0c1018"/>
+                    <path d="M15 15H27C37.5 15 47 22.5 47 32C47 41.5 37.5 49 27 49H15V15Z" fill="#a9e4b3"/>
+                    <path d="M23 23V41H27C33.5 41 39 37 39 32C39 27 33.5 23 27 23H23Z" fill="#0c1018"/>
+                    <path d="M22 26L28 32L22 38H27L33 32L27 26H22Z" fill="#a9e4b3"/>
+                  </svg>
+                </div>
+                <span class="text-xs text-slate-800 truncate font-medium">DevDeck · 控制中心</span>
+                <span class="text-slate-400 hover:text-slate-600 text-xs ml-auto cursor-pointer">×</span>
+              </div>
+
+              <!-- Inactive Tab -->
+              <div class="flex items-center gap-2 px-3 py-1.5 text-xs text-slate-500 max-w-[140px] truncate">
+                <span class="w-3.5 h-3.5 rounded-full bg-slate-300 inline-block"></span>
+                <span>localhost:3000</span>
+              </div>
+            </div>
+
+            <!-- Fake Browser URL Bar -->
+            <div class="p-2.5 bg-[#ffffff] border-t border-slate-200 flex items-center gap-2 text-[11px] font-mono text-slate-500">
+              <span class="text-emerald-600 text-xs">🔒</span>
+              <span class="bg-[#f1f3f4] px-2.5 py-1 rounded w-full border border-slate-200 text-slate-700">
+                https://devdeck.local:9443/services
+              </span>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- Section: Export Code Snippet -->
+      <section class="border-t border-slate-800/80 pt-6">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-xs font-mono text-slate-400">Favicon SVG 源码 (可直接保存为 favicon.svg 或内联使用)</span>
+          <span class="text-[11px] font-mono text-[#a9e4b3]">64×64 Clean Vector</span>
+        </div>
+        <pre class="bg-[#0c1018] p-4 rounded-xl border border-slate-800/80 text-[11px] font-mono text-slate-300 overflow-x-auto leading-relaxed select-all">&lt;svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" fill="none"&gt;
+  &lt;rect width="64" height="64" rx="14" fill="#0c1018"/&gt;
+  &lt;path d="M15 15H27C37.5 15 47 22.5 47 32C47 41.5 37.5 49 27 49H15V15Z" fill="#a9e4b3"/&gt;
+  &lt;path d="M23 23V41H27C33.5 41 39 37 39 32C39 27 33.5 23 27 23H23Z" fill="#0c1018"/&gt;
+  &lt;path d="M22 26L28 32L22 38H27L33 32L27 26H22Z" fill="#a9e4b3"/&gt;
+&lt;/svg&gt;</pre>
+      </section>
+
+    </div>
+  </main>
+
+</body>
+</html>

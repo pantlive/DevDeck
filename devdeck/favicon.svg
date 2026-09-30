@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" fill="none">
+  <title>DevDeck</title>
+  <rect width="64" height="64" rx="14" fill="#0c1018"/>
+  <path d="M15 15H27C37.5 15 47 22.5 47 32C47 41.5 37.5 49 27 49H15V15Z" fill="#a9e4b3"/>
+  <path d="M23 23V41H27C33.5 41 39 37 39 32C39 27 33.5 23 27 23H23Z" fill="#0c1018"/>
+  <path d="M22 26L28 32L22 38H27L33 32L27 26H22Z" fill="#a9e4b3"/>
+</svg>

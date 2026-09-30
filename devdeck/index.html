@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DevDeck · 本地开发中枢</title>
+<!-- 内嵌 SVG 标签图标；源文件为 favicon.svg，页面刷新即可生效。 -->
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2064%2064%22%20width%3D%2264%22%20height%3D%2264%22%20fill%3D%22none%22%3E%3Ctitle%3EDevDeck%3C%2Ftitle%3E%3Crect%20width%3D%2264%22%20height%3D%2264%22%20rx%3D%2214%22%20fill%3D%22%230c1018%22%2F%3E%3Cpath%20d%3D%22M15%2015H27C37.5%2015%2047%2022.5%2047%2032C47%2041.5%2037.5%2049%2027%2049H15V15Z%22%20fill%3D%22%23a9e4b3%22%2F%3E%3Cpath%20d%3D%22M23%2023V41H27C33.5%2041%2039%2037%2039%2032C39%2027%2033.5%2023%2027%2023H23Z%22%20fill%3D%22%230c1018%22%2F%3E%3Cpath%20d%3D%22M22%2026L28%2032L22%2038H27L33%2032L27%2026H22Z%22%20fill%3D%22%23a9e4b3%22%2F%3E%3C%2Fsvg%3E">
+<style>
+:root{font-family:Inter,"PingFang SC","Microsoft YaHei",sans-serif;color:#dce5f4;background:#0c1018;color-scheme:dark}*{box-sizing:border-box}body{margin:0}button,input{font:inherit}button{cursor:pointer;border:1px solid #313e53;border-radius:8px;padding:9px 14px;background:#202b3e;color:#e9eff9}button:hover{background:#30415b}button:disabled{opacity:.45;cursor:wait}.primary{background:#ace5b2;color:#14261b;border-color:#ace5b2;font-weight:700}.primary:hover{background:#c9f5ce}.muted{color:#8493ab;font-size:13px}.shell{max-width:1180px;margin:auto;padding:32px}header{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #263043;padding-bottom:26px}.brand{font-size:24px;font-weight:750;letter-spacing:-1px}.brand span{color:#a9e4b3}.local{border:1px solid #314b3b;color:#a9e4b3;padding:7px 12px;border-radius:20px;font-size:12px}.heading{display:flex;justify-content:space-between;align-items:center;margin:42px 0 24px}h1{font-size:30px;letter-spacing:-1px;margin:0 0 10px}h2{font-size:19px;margin:0}p{line-height:1.7}.stats{display:flex;gap:12px;margin-bottom:28px}.stat{background:#131b29;border:1px solid #263043;border-radius:10px;padding:15px 20px;min-width:150px}.stat b{font-size:25px;margin-right:12px}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}.card{background:#141c29;border:1px solid #293548;border-radius:14px;overflow:hidden}.card-head{padding:22px;display:flex;align-items:center;justify-content:space-between;gap:12px}.actions{display:flex;gap:7px;flex-wrap:wrap}.actions button{font-size:12px;padding:7px 10px}.service{margin:0 20px;padding:20px 0;border-top:1px solid #293548}.service-top{display:flex;justify-content:space-between;align-items:center}.badge{font-size:11px;letter-spacing:1px;color:#a5b8d7}.status{font-size:12px;color:#8c99af}.status.running{color:#a9e4b3}.path,.command{font-family:ui-monospace,monospace;font-size:12px;overflow-wrap:anywhere}.path{color:#8493ab;margin:10px 0}.command{background:#0e1521;padding:12px;border-radius:6px;color:#c3d1e8;margin:10px 0 14px}.service-footer{display:flex;align-items:center;justify-content:space-between;gap:10px}a{color:#a8c8ff;text-decoration:none;font-size:12px}.empty{grid-column:1/-1;text-align:center;padding:72px 20px;border:1px dashed #34415a;border-radius:14px}.empty h2{margin:15px}dialog{border:1px solid #34415a;border-radius:14px;background:#141c29;color:#dce5f4;width:min(640px,94vw);padding:28px}dialog::backdrop{background:#030710b8;backdrop-filter:blur(4px)}.dialog-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}label{display:block;font-size:13px;color:#abb9ce;margin:14px 0 7px}input{width:100%;background:#0d1420;border:1px solid #354158;border-radius:7px;padding:11px;color:#e2eaf7}input:focus{outline:2px solid #89b394}.fields{display:grid;grid-template-columns:1fr 110px;gap:12px}fieldset{border:1px solid #2d3b51;border-radius:9px;margin:20px 0;padding:0 15px 16px}legend{color:#aac3e4;font-size:13px;padding:0 7px}.form-footer{display:flex;justify-content:flex-end;gap:10px;margin-top:20px}#log-dialog{width:min(1000px,95vw)}pre{background:#080e17;border-radius:8px;padding:18px;height:55vh;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;line-height:1.6}#notice{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);max-width:90vw;padding:13px 22px;border:1px solid #95635d;background:#352521;border-radius:10px;z-index:10}footer{margin-top:30px;font-size:12px;color:#697b95} @media(max-width:760px){.shell{padding:20px}.grid{grid-template-columns:1fr}.card-head{align-items:flex-start;flex-direction:column}.heading{gap:16px}.stats{gap:8px}.stat{min-width:0;flex:1;padding:12px}.stat b{display:block}.local{font-size:10px}}
+
+.port-summary{font-size:12px;margin:12px 0;line-height:1.8;overflow-wrap:anywhere;color:#a3b2c9}.port-summary.listening{color:#a9e4b3}.port-summary.occupied{color:#f0b47e}.port-warning{color:#f0b47e}.ports-panel{margin-top:32px;background:#141c29;border:1px solid #293548;border-radius:14px;padding:22px}.ports-heading{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}.ports-heading input{max-width:280px}.table-scroll{overflow-x:auto;margin-top:16px}table{width:100%;border-collapse:collapse;text-align:left;font-size:13px}th{font-weight:500;color:#8493ab}th,td{padding:13px 10px;border-bottom:1px solid #293548;vertical-align:top}td{overflow-wrap:anywhere}td:first-child{font-family:ui-monospace,monospace;white-space:nowrap}.port-edit{font-size:12px;padding:6px 10px}.port-actions{display:flex;align-items:center;gap:8px}.port-empty{text-align:center;padding:30px;color:#8493ab}dialog .inline-error{color:#ffc0a5;font-size:13px;line-height:1.7}dialog .inline-error:empty{display:none}
+.console-actions{display:flex;align-items:center;gap:14px}.console-hint{margin:14px 0 0;text-align:right;font-size:12px;color:#8493ab}#restart-recovery button{margin:8px 8px 0 0}@media(max-width:540px){header{gap:12px;flex-wrap:wrap}.console-actions{gap:8px}.console-actions button{font-size:12px;padding:8px}.console-hint{text-align:left}}
+.brand{display:flex;align-items:center;gap:10px;line-height:1}
+.brand img{display:block;flex-shrink:0}
+.empty [data-brand-logo]{display:block;margin:0 auto}
+</style>
+</head>
+<body>
+<main class="shell">
+<header><div class="brand"><img data-brand-logo width="40" height="40" alt="" aria-hidden="true">DevDeck</div><div class="console-actions"><div class="local">● LOCAL WORKSPACE</div><button id="restart-console" aria-describedby="restart-hint">重启 DevDeck</button></div></header>
+<p class="console-hint" id="restart-hint">重启控制台会停止托管服务，保留配置和日志；项目服务需手动启动。</p>
+<section class="heading"><div><h1>本地项目，一处掌控。</h1><div class="muted">管理前后端服务，让开发环境井然有序。</div></div><button class="primary" id="add">＋ 添加项目</button></section>
+<section class="stats"><div class="stat"><b id="project-count">0</b><span class="muted">项目</span></div><div class="stat"><b id="running-count">0</b><span class="muted">运行中</span></div><div class="stat"><b id="service-count">0</b><span class="muted">服务</span></div></section>
+<div id="projects" class="grid"></div>
+<section class="ports-panel" aria-labelledby="ports-title"><div class="ports-heading"><div><h2 id="ports-title">端口管理 <span class="muted" id="ports-count"></span></h2><p class="muted">本机 TCP 监听端口 · 自动刷新 · 可停止托管服务释放端口</p></div><input id="port-filter" aria-label="搜索端口或进程" placeholder="搜索端口、PID、进程或项目"></div><div class="muted" id="ports-warning"></div><div class="table-scroll"><table><thead><tr><th>端口 / 地址</th><th>占用进程</th><th>所属项目</th><th>操作</th></tr></thead><tbody id="port-rows"></tbody></table></div></section>
+<footer>状态每 2 秒更新 · 运行中表示启动进程存活，不代表服务已就绪 · 退出控制台会停止托管服务</footer>
+</main>
+<dialog id="add-dialog"><form id="project-form"><div class="dialog-head"><h2>添加本地项目</h2><button type="button" data-close="add-dialog">✕</button></div><label for="name">项目名称</label><input id="name" name="name" placeholder="例如：我的开发项目" required maxlength="100">
+<div id="service-fields"></div><p class="muted">至少填写一个启动命令。命令通过 Bash 执行，使用当前用户权限；设置端口后会检查占用，并传入 PORT 环境变量；命令可使用 {port}，例如 npm run dev -- --port {port}。</p><div class="form-footer"><button type="button" data-close="add-dialog">取消</button><button class="primary" type="submit">保存项目</button></div></form></dialog>
+<dialog id="log-dialog"><div class="dialog-head"><h2 id="log-title">服务日志</h2><button data-close="log-dialog">关闭</button></div><div class="muted">自动刷新 · 显示最近 64 KB · 日志保存在本机 .devdeck 目录</div><pre id="log-output"></pre></dialog>
+<dialog id="port-dialog"><form id="port-form"><div class="dialog-head"><h2 id="port-title">配置端口</h2><button type="button" data-close="port-dialog">✕</button></div><label for="edit-port">服务端口</label><input id="edit-port" type="number" min="1" max="65535" placeholder="留空则不管理端口"><label for="edit-command">启动命令</label><input id="edit-command" required><p class="muted">使用 {port} 引用上方端口，例如 python -m http.server {port}。启动时也会设置 PORT 环境变量。固定写在命令或项目配置里的端口需要同步修改。</p><p class="muted" id="edit-port-status"></p><p class="inline-error" id="port-error" role="alert"></p><div class="form-footer"><button type="button" data-close="port-dialog">取消</button><button type="submit" class="primary">保存端口配置</button></div></form></dialog>
+<div id="notice" role="alert" hidden></div>
+<dialog id="restart-dialog" aria-labelledby="restart-title"><h2 id="restart-title">重启 DevDeck</h2><p id="restart-status" role="status">正在请求重启…</p><p class="muted">配置和日志会保留。控制台恢复后将自动刷新页面，项目服务需手动启动。</p><div id="restart-recovery" hidden><button onclick="location.reload()">刷新页面</button><button data-close="restart-dialog">关闭</button></div></dialog>
+<script>
+const $ = id => document.getElementById(id);
+// 页面品牌图标复用标签页图标，保证图形和配色始终一致。
+const brandLogo = document.querySelector('link[rel="icon"]').href;
+function applyBrandLogo() {
+  document.querySelectorAll('[data-brand-logo]').forEach(logo => { logo.src = brandLogo; });
+}
+applyBrandLogo();
+const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let projects = [], activeLog = null, noticeTimer, refreshing = false, restarting = false;
+let portData = {listeners: [], warning: ""}, editingPort = null;
+function notice(message) { $('notice').textContent = message; $('notice').hidden = false; clearTimeout(noticeTimer); noticeTimer = setTimeout(() => $('notice').hidden = true, 6000); }
+async function api(path, body, options = {}) {
+  const response = await fetch(path, {...options, ...(body ? {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)} : {})});
+  const data = await response.json(); if (!response.ok) { const error = new Error(data.error || '操作失败'); error.status = response.status; throw error; } return data;
+}
+async function restartConsole() {
+  if (restarting) return;
+  restarting = true;
+  $('restart-console').disabled = true;
+  $('restart-recovery').hidden = true;
+  $('restart-status').textContent = '正在请求重启…';
+  clearTimeout(noticeTimer); $('notice').hidden = true;
+  $('restart-dialog').showModal();
+  try {
+    const previous = await api('/api/status', null, {signal:AbortSignal.timeout(3000)});
+    try {
+      await api('/api/restart', {}, {signal:AbortSignal.timeout(5000)});
+    } catch (error) {
+      // 连接可能在响应到达前断开；重复请求的 503 同样进入恢复检测。
+      if (error.status && error.status !== 503) throw error;
+    }
+    $('restart-status').textContent = '正在停止托管服务并重启，等待控制台恢复…';
+    const deadline = Date.now() + 60000;
+    while (Date.now() < deadline) {
+      try {
+        const current = await api('/api/status', null, {signal:AbortSignal.timeout(2000)});
+        // 进程 PID 在 exec 后不变，必须确认本次启动标识已更新。
+        if (current.instance_id && current.instance_id !== previous.instance_id && !current.restarting) {
+          location.reload();
+          return;
+        }
+      } catch (_) { /* 重启期间短暂断连属于正常情况。 */ }
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+    throw new Error('等待重启超时。请刷新页面；若仍无法连接，请从终端重新启动 DevDeck。');
+  } catch (error) {
+    $('restart-status').textContent = error.status === 404 ? '当前控制台尚未加载重启功能，请先从终端手动重启 DevDeck 一次。' : '未能完成重启：' + error.message;
+    $('restart-recovery').hidden = false;
+    restarting = false;
+    $('restart-console').disabled = false;
+  }
+}
+$('restart-console').onclick = restartConsole;
+$('restart-dialog').addEventListener('cancel', event => { if (restarting) event.preventDefault(); });
+for (const [kind, label, command] of [['frontend','前端','npm run dev'], ['backend','后端','python -u app.py']]) {
+  $('service-fields').insertAdjacentHTML('beforeend', `<fieldset><legend>${label}服务（可选）</legend><label for="${kind}-directory">工作目录 · 绝对路径</label><input id="${kind}-directory" name="${kind}-directory" placeholder="/home/yourname/projects/my-app"><div class="fields"><div><label for="${kind}-command">启动命令</label><input id="${kind}-command" name="${kind}-command" placeholder="${command}"></div><div><label for="${kind}-port">端口</label><input id="${kind}-port" name="${kind}-port" type="number" min="1" max="65535" placeholder="可选"></div></div></fieldset>`);
+}
+function render() {
+  const services = projects.flatMap(p => p.services);
+  $('project-count').textContent = projects.length; $('service-count').textContent = services.length; $('running-count').textContent = services.filter(s => s.status === 'running').length;
+  $('projects').innerHTML = projects.length ? projects.map(p => `<article class="card"><div class="card-head"><h2>${escapeHtml(p.name)}</h2><div class="actions"><button data-action="start" data-project="${p.id}">全部启动</button><button data-action="stop" data-project="${p.id}">全部停止</button><button data-action="restart" data-project="${p.id}">全部重启</button><button data-action="delete" data-project="${p.id}">删除</button></div></div>${p.services.map(s => `<section class="service"><div class="service-top"><span class="badge">${s.kind === 'frontend' ? 'FRONTEND / 前端' : 'BACKEND / 后端'}</span><span class="status ${s.status}">● ${s.status === 'running' ? `运行中 · PID ${s.pid}` : `已停止${s.exit_code == null ? '' : ' · 退出码 ' + s.exit_code}`}</span></div><div class="path">${escapeHtml(s.directory)}</div><div class="command">$ ${escapeHtml(s.command)}</div>${portSummary(s)}<div class="service-footer"><div class="actions"><button data-action="${s.status === 'running' ? 'stop' : 'start'}" data-project="${p.id}" data-service="${s.id}">${s.status === 'running' ? '停止' : '启动'}</button><button data-action="restart" data-project="${p.id}" data-service="${s.id}">重启</button><button data-log="${s.id}">日志</button></div>${portControls(p, s)}</div></section>`).join('')}</article>`).join('') : '<div class="empty"><img data-brand-logo width="56" height="56" alt="" aria-hidden="true"><h2>从第一个项目开始</h2><p class="muted">添加前端或后端的启动命令，在这里统一管理。</p><button class="primary" onclick="document.getElementById(\'add-dialog\').showModal()">＋ 添加项目</button></div>';
+  applyBrandLogo();
+}
+async function refreshLogs() { if (activeLog && $('log-dialog').open) { const id = activeLog; const result = await api('/api/logs/' + id); if (activeLog !== id) return; const output = $('log-output'); const atBottom = output.scrollHeight - output.scrollTop - output.clientHeight < 40; output.textContent = result.text; if (atBottom) output.scrollTop = output.scrollHeight; } }
+async function refresh() { if (refreshing || restarting) return; refreshing = true; try { const [next, ports] = await Promise.all([api('/api/projects'), api('/api/ports')]); if (restarting) return; if (JSON.stringify(next) !== JSON.stringify(projects) || !$('projects').innerHTML) { projects = next; render(); } if (JSON.stringify(ports) !== JSON.stringify(portData) || !$('port-rows').innerHTML) { portData = ports; renderPorts(); } await refreshLogs(); } catch (error) { if (!restarting) notice('连接失败：' + error.message); } finally { refreshing = false; } }
+$('add').onclick = () => $('add-dialog').showModal();
+document.querySelectorAll('[data-close]').forEach(button => button.onclick = () => $(button.dataset.close).close());
+$('log-dialog').addEventListener('close', () => activeLog = null);
+$('project-form').onsubmit = async event => {
+  event.preventDefault(); const submit = event.submitter; submit.disabled = true;
+  const payload = {name:$('name').value}; for (const kind of ['frontend','backend']) payload[kind] = {directory:$(kind+'-directory').value, command:$(kind+'-command').value, port:$(kind+'-port').value};
+  try { await api('/api/projects', payload); $('add-dialog').close(); event.target.reset(); await refresh(); } catch (error) { notice(error.message); } finally { submit.disabled = false; }
+};
+$('projects').onclick = async event => {
+  const button = event.target.closest('button'); if (!button) return;
+  if (button.dataset.log) { activeLog = button.dataset.log; $('log-output').textContent = '正在读取…'; $('log-dialog').showModal(); try { await refreshLogs(); } catch(error) { notice(error.message); } return; }
+  if (button.dataset.editPort) { openPortEditor(button.dataset.project, button.dataset.editPort); return; }
+  if (!button.dataset.action) return;
+  if (button.dataset.action === 'delete' && !confirm('删除项目配置并停止其服务？项目源文件会保留。')) return;
+  button.disabled = true;
+  try { await api('/api/action', {project_id:button.dataset.project, action:button.dataset.action, service_id:button.dataset.service}); await refresh(); } catch (error) { notice(error.message); } finally { button.disabled = false; }
+};
+// 端口监听与启动进程分别展示，避免将其他程序监听误认为服务就绪。
+function portSummary(service) {
+  const info = service.port_info;
+  const states = {unset:'未配置端口', idle:service.status === 'running' ? '端口未监听 · 启动中或端口不匹配' : '端口未监听', listening:'本服务已监听', occupied:'被其他进程占用或归属未知', unknown:'端口检测不可用'};
+  const owners = [...new Set(info.listeners.flatMap(item => item.owners.map(owner => `${owner.name} · PID ${owner.pid}`)))];
+  const duplicates = info.duplicates.length ? `<br><span class="port-warning">重复配置：${escapeHtml(info.duplicates.join('、'))} · 请使用不同端口同时运行</span>` : '';
+  return `<div class="port-summary ${info.state}">${service.port ? ':' + service.port + ' · ' : ''}${states[info.state]}${owners.length ? ' · ' + escapeHtml(owners.join(' / ')) : ''}${duplicates}</div>`;
+}
+function portControls(project, service) {
+  return `<div class="port-actions">${service.port ? `<a href="http://localhost:${service.port}" target="_blank" rel="noopener noreferrer">:${service.port} ↗</a>` : ''}<button class="port-edit" data-edit-port="${service.id}" data-project="${project.id}" ${service.status === 'running' ? 'disabled title="先停止服务再修改端口"' : ''}>配置端口</button></div>`;
+}
+function renderPorts() {
+  const query = $('port-filter').value.trim().toLowerCase();
+  const listeners = portData.listeners.filter(item => JSON.stringify(item).toLowerCase().includes(query));
+  $('ports-count').textContent = `· ${portData.listeners.length} 个监听地址`;
+  $('ports-warning').textContent = portData.warning || '进程信息受当前用户权限限制；此处显示当前 WSL/Linux 网络环境，不包含 Windows 主机独立进程。';
+  $('port-rows').innerHTML = listeners.length ? listeners.map(item => `<tr><td><b>${item.port}</b><br><span class="muted">${escapeHtml(item.address)} · ${item.family}</span></td><td>${item.owners.length ? item.owners.map(owner => `${escapeHtml(owner.name)}<br><span class="muted">PID ${owner.pid}</span>`).join('<br>') : '<span class="muted">未知 / 无权限查看</span>'}</td><td>${item.managed.length ? item.managed.map(service => `${escapeHtml(service.name)} · ${service.kind === 'frontend' ? '前端' : '后端'}`).join('<br>') : '<span class="muted">未托管</span>'}</td><td>${item.managed.map(service => `<button class="port-edit" data-project="${service.project_id}" data-service="${service.service_id}">停止服务</button>`).join('') || '<span class="muted">—</span>'}</td></tr>`).join('') : `<tr><td colspan="4" class="port-empty">${query ? '没有匹配的端口' : portData.warning ? '无法获取监听端口' : '暂无 TCP 监听端口'}</td></tr>`;
+}
+function openPortEditor(projectId, serviceId) {
+  const project = projects.find(item => item.id === projectId);
+  const service = project.services.find(item => item.id === serviceId);
+  editingPort = {project_id:projectId, service_id:serviceId};
+  $('port-title').textContent = `${project.name} · ${service.kind === 'frontend' ? '前端' : '后端'}端口`;
+  $('edit-port').value = service.port || '';
+  $('edit-command').value = service.command;
+  $('port-error').textContent = '';
+  updatePortHint();
+  $('port-dialog').showModal();
+}
+function updatePortHint() {
+  const port = Number($('edit-port').value);
+  const occupied = portData.listeners.some(item => item.port === port);
+  const duplicate = projects.flatMap(project => project.services).some(service => service.port === port && service.id !== editingPort?.service_id);
+  $('edit-port-status').textContent = !port ? '未配置端口时不检查端口冲突。' : occupied ? `端口 ${port} 当前已有监听，请释放端口或选择其他端口。` : duplicate ? `端口 ${port} 已被其他服务配置，同时运行前需要更换。` : `端口 ${port} 当前未发现监听，启动前会再次检查。`;
+}
+$('edit-port').addEventListener('input', updatePortHint);
+$('port-filter').addEventListener('input', renderPorts);
+$('port-form').onsubmit = async event => {
+  event.preventDefault(); const submit = event.submitter; submit.disabled = true;
+  try { await api('/api/ports', {...editingPort, port:$('edit-port').value, command:$('edit-command').value}); $('port-dialog').close(); await refresh(); }
+  catch (error) { $('port-error').textContent = error.message; }
+  finally { submit.disabled = false; }
+};
+$('port-rows').onclick = async event => {
+  const button = event.target.closest('button'); if (!button) return;
+  button.disabled = true;
+  try { await api('/api/action', {project_id:button.dataset.project, service_id:button.dataset.service, action:'stop'}); await refresh(); }
+  catch (error) { notice(error.message); }
+  finally { button.disabled = false; }
+};
+refresh(); setInterval(refresh, 2000);
+</script>
+</body>
+</html>

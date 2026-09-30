@@ -1,0 +1,3 @@
+name: devdeck
+dependencies:
+  - python=3.11
