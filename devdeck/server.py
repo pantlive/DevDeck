@@ -14,6 +14,12 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+from devdeck.git import (
+    checkout_branch,
+    fetch_remotes,
+    inspect_repo,
+    validate_branch,
+)
 from devdeck.ports import ensure_available, scan_ports, validate_port
 
 
@@ -50,11 +56,13 @@ class Manager:
     def snapshot(self) -> list[dict[str, Any]]:
         with self.lock:
             ports = self.ports()
+            git_cache: dict[str, dict[str, Any] | None] = {}
             result = json.loads(json.dumps(self.projects))
             for project in result:
                 for service in project["services"]:
                     process = self.processes.get(service["id"])
                     code = process.poll() if process else None
+                    service.setdefault("branch", "")
                     service.update(
                         status="running"
                         if process and code is None
@@ -62,8 +70,21 @@ class Manager:
                         pid=process.pid if process and code is None else None,
                         exit_code=code,
                         port_info=self.port_info(service, ports),
+                        git=self.git_info(service["directory"], git_cache),
                     )
             return result
+
+    def git_info(
+        self, directory: str, cache: dict[str, dict[str, Any] | None]
+    ) -> dict[str, Any] | None:
+        """同一仓库只探测一次，避免一个项目的前后端重复跑 Git。"""
+        resolved = str(Path(directory))
+        if resolved not in cache:
+            info = inspect_repo(Path(directory))
+            cache[resolved] = info
+            if info and info.get("root"):
+                cache[info["root"]] = info
+        return cache[resolved]
 
     def ports(self) -> dict[str, Any]:
         """将监听进程的进程组关联到托管服务，不根据端口号猜测归属。"""
@@ -198,6 +219,9 @@ class Manager:
             port = validate_port(item.get("port"))
             if "{port}" in command and not port:
                 raise ValueError("启动命令包含 {port} 时必须配置端口")
+            branch = str(item.get("branch", "")).strip()
+            if branch:
+                validate_branch(branch)
             services.append(
                 dict(
                     id=uuid.uuid4().hex,
@@ -205,6 +229,7 @@ class Manager:
                     directory=str(directory.resolve()),
                     command=command,
                     port=port,
+                    branch=branch,
                 )
             )
         if not services:
@@ -215,7 +240,101 @@ class Manager:
             )
             self.save()
 
-    def start(self, service: dict[str, Any]) -> None:
+    def git_root(self, directory: str) -> str:
+        info = inspect_repo(Path(directory))
+        return str(info["root"]) if info and info.get("root") else ""
+
+    def ensure_repo_idle(self, root: str) -> None:
+        """同一仓库只要有托管进程在跑，就不切换分支，避免改正在运行的代码。"""
+        if not root:
+            return
+        for project in self.projects:
+            for service in project["services"]:
+                process = self.processes.get(service["id"])
+                if process is None or process.poll() is not None:
+                    continue
+                if self.git_root(service["directory"]) == root:
+                    raise ValueError(
+                        f"请先停止项目「{project['name']}」的服务，再切换分支"
+                    )
+
+    def prepare_branches(self, services: list[dict[str, Any]]) -> None:
+        """启动前按配置检出分支；同一仓库只切一次，冲突的选择直接失败。"""
+        planned: dict[str, str] = {}
+        owners: dict[str, dict[str, Any]] = {}
+        for service in services:
+            branch = str(service.get("branch") or "").strip()
+            if not branch:
+                continue
+            root = self.git_root(service["directory"])
+            if not root:
+                raise ValueError("服务目录不是 Git 仓库，无法按分支启动")
+            previous = planned.get(root)
+            if previous and previous != branch:
+                raise ValueError("同一仓库的服务选择了不同分支")
+            planned[root] = branch
+            owners[root] = service
+        for root, branch in planned.items():
+            self.ensure_repo_idle(root)
+            actual = checkout_branch(Path(owners[root]["directory"]), branch)
+            for project in self.projects:
+                for service in project["services"]:
+                    if self.git_root(service["directory"]) == root:
+                        service["branch"] = actual
+            self.save()
+
+    def checkout_project_branch(self, payload: dict[str, Any]) -> None:
+        """停止服务后切换分支，并把该仓库下的服务都记到同一分支。"""
+        branch = validate_branch(payload.get("branch"))
+        with self.lock:
+            project = self.project(payload["project_id"])
+            service_id = payload.get("service_id")
+            selected = [
+                service
+                for service in project["services"]
+                if not service_id or service["id"] == service_id
+            ]
+            if not selected:
+                raise ValueError("服务不存在")
+            roots: dict[str, dict[str, Any]] = {}
+            for service in selected:
+                root = self.git_root(service["directory"])
+                if not root:
+                    raise ValueError("服务目录不是 Git 仓库")
+                roots[root] = service
+            if not service_id and len(roots) > 1:
+                raise ValueError("项目包含多个 Git 仓库，请选择要切换的服务")
+            for root, service in roots.items():
+                self.ensure_repo_idle(root)
+                actual = checkout_branch(Path(service["directory"]), branch)
+                for item in project["services"]:
+                    if self.git_root(item["directory"]) == root:
+                        item["branch"] = actual
+            self.save()
+
+    def fetch_project(self, payload: dict[str, Any]) -> None:
+        """只更新远程跟踪引用，用于发现最新分支，不改变当前检出。"""
+        with self.lock:
+            project = self.project(payload["project_id"])
+            service_id = payload.get("service_id")
+            selected = [
+                service
+                for service in project["services"]
+                if not service_id or service["id"] == service_id
+            ]
+            if not selected:
+                raise ValueError("服务不存在")
+            fetched: set[str] = set()
+            for service in selected:
+                root = self.git_root(service["directory"])
+                if not root or root in fetched:
+                    continue
+                fetch_remotes(Path(service["directory"]))
+                fetched.add(root)
+            if not fetched:
+                raise ValueError("服务目录不是 Git 仓库")
+
+    def start(self, service: dict[str, Any], *, prepared: bool = False) -> None:
         service_id = service["id"]
         previous = self.processes.get(service_id)
         if previous and previous.poll() is None:
@@ -223,6 +342,8 @@ class Manager:
         # 清理已退出父进程遗留的子进程，防止重复启动。
         if previous:
             self.stop(service_id)
+        if not prepared:
+            self.prepare_branches([service])
         self.check_ports([service])
         # 显式占位符与 PORT 环境变量使端口配置可以真正传给应用。
         command = service["command"]
@@ -230,10 +351,13 @@ class Manager:
         if service["port"]:
             command = command.replace("{port}", str(service["port"]))
             environment["PORT"] = str(service["port"])
+        git = inspect_repo(Path(service["directory"]))
+        if git and git.get("current"):
+            environment["DEVDECK_BRANCH"] = git["current"]
+        started = time.strftime("%Y-%m-%d %H:%M:%S")
+        branch_note = f" · 分支 {git['current']}" if git and git.get("current") else ""
         with self.log_path(service_id).open("ab", buffering=0) as output:
-            output.write(
-                f"\n--- 启动 {time.strftime('%Y-%m-%d %H:%M:%S')} ---\n".encode()
-            )
+            output.write(f"\n--- 启动 {started}{branch_note} ---\n".encode())
             # 独立进程组确保停止时同时终止 npm、shell 等派生的子进程。
             self.processes[service_id] = subprocess.Popen(
                 ["/bin/bash", "-lc", command],
@@ -285,10 +409,11 @@ class Manager:
                 for service in services:
                     self.stop(service["id"])
             if action in {"start", "restart"}:
+                self.prepare_branches(services)
                 self.check_ports(services)
             for service in services:
                 if action in {"start", "restart"}:
-                    self.start(service)
+                    self.start(service, prepared=True)
             if action == "delete":
                 self.projects.remove(project)
                 self.save()
@@ -433,6 +558,11 @@ def handler_for(manager: Manager) -> type[BaseHTTPRequestHandler]:
                         )
                     elif self.path == "/api/ports":
                         manager.update_port(payload)
+                    elif self.path == "/api/branch":
+                        if payload.get("fetch"):
+                            manager.fetch_project(payload)
+                        else:
+                            manager.checkout_project_branch(payload)
                     else:
                         self.reply(404, {"error": "接口不存在"})
                         return

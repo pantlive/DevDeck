@@ -13,6 +13,7 @@
 .brand{display:flex;align-items:center;gap:10px;line-height:1}
 .brand img{display:block;flex-shrink:0}
 .empty [data-brand-logo]{display:block;margin:0 auto}
+.card-title{min-width:0}.card-title h2{margin:0 0 8px}.git-bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:8px 0 0}.git-chip{font-size:12px;padding:5px 10px;border-radius:999px;background:#0e1521}.latest-tag{background:#ace5b2;color:#14261b;border-radius:999px;padding:2px 8px;font-size:11px;font-weight:700}.git-latest{border:0;background:transparent;padding:0;color:#f0d9a8;font-size:12px}.git-latest:hover{background:transparent;text-decoration:underline}.branch-list{max-height:42vh;overflow:auto;margin:8px 0 0;display:flex;flex-direction:column;gap:8px}.branch-option{display:flex;align-items:flex-start;gap:10px;margin:0;padding:12px;border:1px solid #293548;border-radius:10px;cursor:pointer}.branch-option:has(input:checked){border-color:#ace5b2;background:#182314}.branch-option input{margin-top:4px;accent-color:#ace5b2}.branch-name{font-family:ui-monospace,monospace;font-size:13px}.branch-meta{font-size:12px;color:#8493ab;margin-top:4px}
 </style>
 </head>
 <body>
@@ -23,14 +24,15 @@
 <section class="stats"><div class="stat"><b id="project-count">0</b><span class="muted">项目</span></div><div class="stat"><b id="running-count">0</b><span class="muted">运行中</span></div><div class="stat"><b id="service-count">0</b><span class="muted">服务</span></div></section>
 <div id="projects" class="grid"></div>
 <section class="ports-panel" aria-labelledby="ports-title"><div class="ports-heading"><div><h2 id="ports-title">端口管理 <span class="muted" id="ports-count"></span></h2><p class="muted">本机 TCP 监听端口 · 自动刷新 · 可停止托管服务释放端口</p></div><input id="port-filter" aria-label="搜索端口或进程" placeholder="搜索端口、PID、进程或项目"></div><div class="muted" id="ports-warning"></div><div class="table-scroll"><table><thead><tr><th>端口 / 地址</th><th>占用进程</th><th>所属项目</th><th>操作</th></tr></thead><tbody id="port-rows"></tbody></table></div></section>
-<footer>状态每 2 秒更新 · 运行中表示启动进程存活，不代表服务已就绪 · 退出控制台会停止托管服务</footer>
+<footer>状态每 2 秒更新 · 运行中表示启动进程存活，不代表服务已就绪 · Git 分支按最后提交时间标记最新 · 退出控制台会停止托管服务</footer>
 </main>
 <dialog id="add-dialog"><form id="project-form"><div class="dialog-head"><h2>添加本地项目</h2><button type="button" data-close="add-dialog">✕</button></div><label for="name">项目名称</label><input id="name" name="name" placeholder="例如：我的开发项目" required maxlength="100">
-<div id="service-fields"></div><p class="muted">至少填写一个启动命令。命令通过 Bash 执行，使用当前用户权限；设置端口后会检查占用，并传入 PORT 环境变量；命令可使用 {port}，例如 npm run dev -- --port {port}。</p><div class="form-footer"><button type="button" data-close="add-dialog">取消</button><button class="primary" type="submit">保存项目</button></div></form></dialog>
+<div id="service-fields"></div><p class="muted">至少填写一个启动命令。命令通过 Bash 执行，使用当前用户权限；设置端口后会检查占用，并传入 PORT 环境变量；命令可使用 {port}，例如 npm run dev -- --port {port}。工作目录若是 Git 仓库，卡片会显示当前分支和最近更新的分支，停止服务后可切换再启动。</p><div class="form-footer"><button type="button" data-close="add-dialog">取消</button><button class="primary" type="submit">保存项目</button></div></form></dialog>
 <dialog id="log-dialog"><div class="dialog-head"><h2 id="log-title">服务日志</h2><button data-close="log-dialog">关闭</button></div><div class="muted">自动刷新 · 显示最近 64 KB · 日志保存在本机 .devdeck 目录</div><pre id="log-output"></pre></dialog>
 <dialog id="port-dialog"><form id="port-form"><div class="dialog-head"><h2 id="port-title">配置端口</h2><button type="button" data-close="port-dialog">✕</button></div><label for="edit-port">服务端口</label><input id="edit-port" type="number" min="1" max="65535" placeholder="留空则不管理端口"><label for="edit-command">启动命令</label><input id="edit-command" required><p class="muted">使用 {port} 引用上方端口，例如 python -m http.server {port}。启动时也会设置 PORT 环境变量。固定写在命令或项目配置里的端口需要同步修改。</p><p class="muted" id="edit-port-status"></p><p class="inline-error" id="port-error" role="alert"></p><div class="form-footer"><button type="button" data-close="port-dialog">取消</button><button type="submit" class="primary">保存端口配置</button></div></form></dialog>
 <div id="notice" role="alert" hidden></div>
 <dialog id="restart-dialog" aria-labelledby="restart-title"><h2 id="restart-title">重启 DevDeck</h2><p id="restart-status" role="status">正在请求重启…</p><p class="muted">配置和日志会保留。控制台恢复后将自动刷新页面，项目服务需手动启动。</p><div id="restart-recovery" hidden><button onclick="location.reload()">刷新页面</button><button data-close="restart-dialog">关闭</button></div></dialog>
+<dialog id="branch-dialog"><form id="branch-form"><div class="dialog-head"><h2 id="branch-title">切换分支</h2><button type="button" data-close="branch-dialog">✕</button></div><p class="muted" id="branch-status"></p><p class="inline-error" id="branch-error" role="alert"></p><div id="branch-list" class="branch-list" role="radiogroup" aria-label="分支列表"></div><div class="form-footer"><button type="button" id="branch-fetch">刷新远程</button><button type="button" data-close="branch-dialog">取消</button><button class="primary" type="submit">切换分支</button></div></form></dialog>
 <script>
 const $ = id => document.getElementById(id);
 // 页面品牌图标复用标签页图标，保证图形和配色始终一致。
@@ -41,7 +43,7 @@ function applyBrandLogo() {
 applyBrandLogo();
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let projects = [], activeLog = null, noticeTimer, refreshing = false, restarting = false;
-let portData = {listeners: [], warning: ""}, editingPort = null;
+let portData = {listeners: [], warning: ""}, editingPort = null, editingBranch = null;
 function notice(message) { $('notice').textContent = message; $('notice').hidden = false; clearTimeout(noticeTimer); noticeTimer = setTimeout(() => $('notice').hidden = true, 6000); }
 async function api(path, body, options = {}) {
   const response = await fetch(path, {...options, ...(body ? {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)} : {})});
@@ -89,10 +91,40 @@ $('restart-dialog').addEventListener('cancel', event => { if (restarting) event.
 for (const [kind, label, command] of [['frontend','前端','npm run dev'], ['backend','后端','python -u app.py']]) {
   $('service-fields').insertAdjacentHTML('beforeend', `<fieldset><legend>${label}服务（可选）</legend><label for="${kind}-directory">工作目录 · 绝对路径</label><input id="${kind}-directory" name="${kind}-directory" placeholder="/home/yourname/projects/my-app"><div class="fields"><div><label for="${kind}-command">启动命令</label><input id="${kind}-command" name="${kind}-command" placeholder="${command}"></div><div><label for="${kind}-port">端口</label><input id="${kind}-port" name="${kind}-port" type="number" min="1" max="65535" placeholder="可选"></div></div></fieldset>`);
 }
+function sharedGit(project) {
+  const roots = [...new Set(project.services.map(service => service.git && service.git.root).filter(Boolean))];
+  return roots.length === 1 ? project.services.find(service => service.git && service.git.root).git : null;
+}
+function preferredBranch(project, service) {
+  if (service && service.branch) return service.branch;
+  const shared = [...new Set(project.services.map(item => item.branch).filter(Boolean))];
+  return shared.length === 1 ? shared[0] : '';
+}
+function formatBranchTime(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString('zh-CN', {hour12:false});
+}
+function gitBar(project, service, git) {
+  if (!git) return '';
+  if (git.warning && !git.branches.length) return `<div class="git-bar"><span class="port-warning">${escapeHtml(git.warning)}</span></div>`;
+  const current = git.detached ? '游离 HEAD' : (git.current || '未知分支');
+  const running = service ? service.status === 'running' : project.services.some(item => item.status === 'running');
+  const preferred = preferredBranch(project, service);
+  const serviceAttr = service ? ` data-branch-service="${service.id}"` : '';
+  const attrs = `data-branch-project="${project.id}"${serviceAttr}${running ? ' disabled title="先停止服务再切换分支"' : ''}`;
+  const latest = git.latest && git.current !== git.latest ? `<button type="button" class="git-latest" ${attrs}>最新更新 ${escapeHtml(git.latest)}</button>` : (git.latest && git.current === git.latest ? '<span class="latest-tag">最新</span>' : '');
+  const pending = preferred && preferred !== git.current ? `<span class="muted">启动时切换到 ${escapeHtml(preferred)}</span>` : '';
+  const dirty = git.dirty ? '<span class="port-warning">有未提交改动</span>' : '';
+  return `<div class="git-bar"><button type="button" class="git-chip" ${attrs}>分支 ${escapeHtml(current)}</button>${latest}${pending}${dirty}</div>`;
+}
 function render() {
   const services = projects.flatMap(p => p.services);
   $('project-count').textContent = projects.length; $('service-count').textContent = services.length; $('running-count').textContent = services.filter(s => s.status === 'running').length;
-  $('projects').innerHTML = projects.length ? projects.map(p => `<article class="card"><div class="card-head"><h2>${escapeHtml(p.name)}</h2><div class="actions"><button data-action="start" data-project="${p.id}">全部启动</button><button data-action="stop" data-project="${p.id}">全部停止</button><button data-action="restart" data-project="${p.id}">全部重启</button><button data-action="delete" data-project="${p.id}">删除</button></div></div>${p.services.map(s => `<section class="service"><div class="service-top"><span class="badge">${s.kind === 'frontend' ? 'FRONTEND / 前端' : 'BACKEND / 后端'}</span><span class="status ${s.status}">● ${s.status === 'running' ? `运行中 · PID ${s.pid}` : `已停止${s.exit_code == null ? '' : ' · 退出码 ' + s.exit_code}`}</span></div><div class="path">${escapeHtml(s.directory)}</div><div class="command">$ ${escapeHtml(s.command)}</div>${portSummary(s)}<div class="service-footer"><div class="actions"><button data-action="${s.status === 'running' ? 'stop' : 'start'}" data-project="${p.id}" data-service="${s.id}">${s.status === 'running' ? '停止' : '启动'}</button><button data-action="restart" data-project="${p.id}" data-service="${s.id}">重启</button><button data-log="${s.id}">日志</button></div>${portControls(p, s)}</div></section>`).join('')}</article>`).join('') : '<div class="empty"><img data-brand-logo width="56" height="56" alt="" aria-hidden="true"><h2>从第一个项目开始</h2><p class="muted">添加前端或后端的启动命令，在这里统一管理。</p><button class="primary" onclick="document.getElementById(\'add-dialog\').showModal()">＋ 添加项目</button></div>';
+  $('projects').innerHTML = projects.length ? projects.map(p => {
+    const shared = sharedGit(p);
+    return `<article class="card"><div class="card-head"><div class="card-title"><h2>${escapeHtml(p.name)}</h2>${shared ? gitBar(p, null, shared) : ''}</div><div class="actions"><button data-action="start" data-project="${p.id}">全部启动</button><button data-action="stop" data-project="${p.id}">全部停止</button><button data-action="restart" data-project="${p.id}">全部重启</button><button data-action="delete" data-project="${p.id}">删除</button></div></div>${p.services.map(s => `<section class="service"><div class="service-top"><span class="badge">${s.kind === 'frontend' ? 'FRONTEND / 前端' : 'BACKEND / 后端'}</span><span class="status ${s.status}">● ${s.status === 'running' ? `运行中 · PID ${s.pid}` : `已停止${s.exit_code == null ? '' : ' · 退出码 ' + s.exit_code}`}</span></div><div class="path">${escapeHtml(s.directory)}</div>${shared ? '' : gitBar(p, s, s.git)}<div class="command">$ ${escapeHtml(s.command)}</div>${portSummary(s)}<div class="service-footer"><div class="actions"><button data-action="${s.status === 'running' ? 'stop' : 'start'}" data-project="${p.id}" data-service="${s.id}">${s.status === 'running' ? '停止' : '启动'}</button><button data-action="restart" data-project="${p.id}" data-service="${s.id}">重启</button><button data-log="${s.id}">日志</button></div>${portControls(p, s)}</div></section>`).join('')}</article>`;
+  }).join('') : '<div class="empty"><img data-brand-logo width="56" height="56" alt="" aria-hidden="true"><h2>从第一个项目开始</h2><p class="muted">添加前端或后端的启动命令，在这里统一管理。</p><button class="primary" onclick="document.getElementById(\'add-dialog\').showModal()">＋ 添加项目</button></div>';
   applyBrandLogo();
 }
 async function refreshLogs() { if (activeLog && $('log-dialog').open) { const id = activeLog; const result = await api('/api/logs/' + id); if (activeLog !== id) return; const output = $('log-output'); const atBottom = output.scrollHeight - output.scrollTop - output.clientHeight < 40; output.textContent = result.text; if (atBottom) output.scrollTop = output.scrollHeight; } }
@@ -109,6 +141,7 @@ $('projects').onclick = async event => {
   const button = event.target.closest('button'); if (!button) return;
   if (button.dataset.log) { activeLog = button.dataset.log; $('log-output').textContent = '正在读取…'; $('log-dialog').showModal(); try { await refreshLogs(); } catch(error) { notice(error.message); } return; }
   if (button.dataset.editPort) { openPortEditor(button.dataset.project, button.dataset.editPort); return; }
+  if (button.dataset.branchProject) { openBranchDialog(button.dataset.branchProject, button.dataset.branchService); return; }
   if (!button.dataset.action) return;
   if (button.dataset.action === 'delete' && !confirm('删除项目配置并停止其服务？项目源文件会保留。')) return;
   button.disabled = true;
@@ -155,6 +188,64 @@ $('port-form').onsubmit = async event => {
   event.preventDefault(); const submit = event.submitter; submit.disabled = true;
   try { await api('/api/ports', {...editingPort, port:$('edit-port').value, command:$('edit-command').value}); $('port-dialog').close(); await refresh(); }
   catch (error) { $('port-error').textContent = error.message; }
+  finally { submit.disabled = false; }
+};
+function branchTarget(projectId, serviceId) {
+  const project = projects.find(item => item.id === projectId);
+  if (!project) return {project:null, service:null, git:null};
+  const service = serviceId ? project.services.find(item => item.id === serviceId) : null;
+  return {project, service, git: service ? service.git : sharedGit(project)};
+}
+function renderBranchList(git, selected) {
+  const current = selected || git.current || git.latest || '';
+  $('branch-list').innerHTML = git.branches.length ? git.branches.map(branch => {
+    const marks = [branch.current ? '当前' : '', branch.latest ? '最新更新' : '', branch.remote ? '仅远程' : '', branch.upstream_commit && branch.upstream_commit !== branch.commit ? '远程有更新' : ''].filter(Boolean).join(' · ');
+    const time = formatBranchTime(branch.upstream_at || branch.updated_at);
+    return `<label class="branch-option"><input type="radio" name="branch-choice" value="${escapeHtml(branch.name)}" ${branch.name === current ? 'checked' : ''}><span><div class="branch-name">${escapeHtml(branch.name)}${branch.latest ? ' <span class="latest-tag">最新</span>' : ''}</div><div class="branch-meta">${escapeHtml(branch.commit)}${time ? ' · ' + escapeHtml(time) : ''}${marks ? ' · ' + marks : ''}</div></span></label>`;
+  }).join('') : '<p class="muted">还没有可切换的分支。需要先在仓库里提交，或刷新远程跟踪分支。</p>';
+}
+function openBranchDialog(projectId, serviceId) {
+  const target = branchTarget(projectId, serviceId);
+  if (!target.project || !target.git) { notice('没有可读的 Git 仓库'); return; }
+  editingBranch = {project_id:projectId, service_id:serviceId || ''};
+  const git = target.git;
+  const current = git.detached ? '游离 HEAD' : (git.current || '未知分支');
+  $('branch-title').textContent = `${target.project.name} · 分支`;
+  $('branch-status').textContent = git.latest && git.latest !== git.current
+    ? `当前 ${current}。最近更新的分支是 ${git.latest}，按最后一次提交时间计算；刷新远程后会纳入已获取的远程分支。`
+    : `当前 ${current}${git.latest ? '，也是最近更新的分支' : ''}。工作区有未提交改动时不能切换。`;
+  $('branch-error').textContent = git.warning || '';
+  $('branch-fetch').hidden = !git.has_remotes;
+  $('branch-fetch').disabled = false;
+  renderBranchList(git, preferredBranch(target.project, target.service) || git.current);
+  $('branch-dialog').showModal();
+}
+$('branch-fetch').onclick = async () => {
+  if (!editingBranch) return;
+  const button = $('branch-fetch'); button.disabled = true;
+  $('branch-error').textContent = '';
+  try {
+    await api('/api/branch', {project_id:editingBranch.project_id, service_id:editingBranch.service_id || undefined, fetch:true});
+    await refresh();
+    const target = branchTarget(editingBranch.project_id, editingBranch.service_id);
+    if (target.git) {
+      $('branch-status').textContent = target.git.latest ? `已刷新远程。最近更新的分支是 ${target.git.latest}。` : '已刷新远程，仍没有可切换的分支。';
+      renderBranchList(target.git, document.querySelector('input[name="branch-choice"]:checked')?.value);
+    }
+  } catch (error) { $('branch-error').textContent = error.message; }
+  finally { button.disabled = false; }
+};
+$('branch-form').onsubmit = async event => {
+  event.preventDefault();
+  const selected = document.querySelector('input[name="branch-choice"]:checked');
+  if (!selected) { $('branch-error').textContent = '请选择要启动的分支'; return; }
+  const submit = event.submitter; submit.disabled = true;
+  $('branch-error').textContent = '';
+  try {
+    await api('/api/branch', {project_id:editingBranch.project_id, service_id:editingBranch.service_id || undefined, branch:selected.value});
+    $('branch-dialog').close();
+    await refresh();
+  } catch (error) { $('branch-error').textContent = error.message; }
   finally { submit.disabled = false; }
 };
 $('port-rows').onclick = async event => {
