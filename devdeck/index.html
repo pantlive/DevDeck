@@ -14,17 +14,23 @@
 .brand img{display:block;flex-shrink:0}
 .empty [data-brand-logo]{display:block;margin:0 auto}
 .card-title{min-width:0}.card-title h2{margin:0 0 8px}.git-bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:8px 0 0}.git-chip{font-size:12px;padding:5px 10px;border-radius:999px;background:#0e1521}.latest-tag{background:#ace5b2;color:#14261b;border-radius:999px;padding:2px 8px;font-size:11px;font-weight:700}.git-latest{border:0;background:transparent;padding:0;color:#f0d9a8;font-size:12px}.git-latest:hover{background:transparent;text-decoration:underline}.branch-list{max-height:42vh;overflow:auto;margin:8px 0 0;display:flex;flex-direction:column;gap:8px}.branch-option{display:flex;align-items:flex-start;gap:10px;margin:0;padding:12px;border:1px solid #293548;border-radius:10px;cursor:pointer}.branch-option:has(input:checked){border-color:#ace5b2;background:#182314}.branch-option input{margin-top:4px;accent-color:#ace5b2}.branch-name{font-family:ui-monospace,monospace;font-size:13px}.branch-meta{font-size:12px;color:#8493ab;margin-top:4px}
+.branch-switch{display:flex;flex-wrap:wrap;align-items:center;gap:0;border:1px solid #313e53;border-radius:8px;overflow:hidden}
+.branch-switch[hidden]{display:none}
+.branch-switch button{border:0;border-radius:0;padding:7px 12px;font-size:12px}
+.branch-switch button.active{background:#ace5b2;color:#14261b;font-weight:700}
+.branch-switch button.active:hover{background:#c9f5ce}
+.branch-switch .current-other{padding:0 10px;font-size:12px;color:#8493ab}
 </style>
 </head>
 <body>
 <main class="shell">
-<header><div class="brand"><img data-brand-logo width="40" height="40" alt="" aria-hidden="true">DevDeck</div><div class="console-actions"><div class="local">● LOCAL WORKSPACE</div><button id="restart-console" aria-describedby="restart-hint">重启 DevDeck</button></div></header>
-<p class="console-hint" id="restart-hint">重启控制台会停止托管服务，保留配置和日志；项目服务需手动启动。</p>
+<header><div class="brand"><img data-brand-logo width="40" height="40" alt="" aria-hidden="true">DevDeck</div><div class="console-actions"><div id="console-branch" class="branch-switch" hidden role="group" aria-label="控制台分支"></div><div class="local">● LOCAL WORKSPACE</div><button id="restart-console" aria-describedby="restart-hint">重启 DevDeck</button></div></header>
+<p class="console-hint" id="restart-hint">重启控制台会停止托管服务，保留配置和日志；项目服务需手动启动。控制台默认使用 feat，可在右上角切换到 dev。</p>
 <section class="heading"><div><h1>本地项目，一处掌控。</h1><div class="muted">管理前后端服务，让开发环境井然有序。</div></div><button class="primary" id="add">＋ 添加项目</button></section>
 <section class="stats"><div class="stat"><b id="project-count">0</b><span class="muted">项目</span></div><div class="stat"><b id="running-count">0</b><span class="muted">运行中</span></div><div class="stat"><b id="service-count">0</b><span class="muted">服务</span></div></section>
 <div id="projects" class="grid"></div>
 <section class="ports-panel" aria-labelledby="ports-title"><div class="ports-heading"><div><h2 id="ports-title">端口管理 <span class="muted" id="ports-count"></span></h2><p class="muted">本机 TCP 监听端口 · 自动刷新 · 可停止托管服务释放端口</p></div><input id="port-filter" aria-label="搜索端口或进程" placeholder="搜索端口、PID、进程或项目"></div><div class="muted" id="ports-warning"></div><div class="table-scroll"><table><thead><tr><th>端口 / 地址</th><th>占用进程</th><th>所属项目</th><th>操作</th></tr></thead><tbody id="port-rows"></tbody></table></div></section>
-<footer>状态每 2 秒更新 · 运行中表示启动进程存活，不代表服务已就绪 · Git 分支按最后提交时间标记最新 · 退出控制台会停止托管服务</footer>
+<footer>状态每 2 秒更新 · 运行中表示启动进程存活，不代表服务已就绪 · Git 分支按最后提交时间标记最新 · 控制台默认 feat，可切换 dev · 退出控制台会停止托管服务</footer>
 </main>
 <dialog id="add-dialog"><form id="project-form"><div class="dialog-head"><h2>添加本地项目</h2><button type="button" data-close="add-dialog">✕</button></div><label for="name">项目名称</label><input id="name" name="name" placeholder="例如：我的开发项目" required maxlength="100">
 <div id="service-fields"></div><p class="muted">至少填写一个启动命令。命令通过 Bash 执行，使用当前用户权限；设置端口后会检查占用，并传入 PORT 环境变量；命令可使用 {port}，例如 npm run dev -- --port {port}。工作目录若是 Git 仓库，卡片会显示当前分支和最近更新的分支，停止服务后可切换再启动。</p><div class="form-footer"><button type="button" data-close="add-dialog">取消</button><button class="primary" type="submit">保存项目</button></div></form></dialog>
@@ -42,7 +48,7 @@ function applyBrandLogo() {
 }
 applyBrandLogo();
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-let projects = [], activeLog = null, noticeTimer, refreshing = false, restarting = false;
+let projects = [], activeLog = null, noticeTimer, refreshing = false, restarting = false, consoleInfo = null;
 let portData = {listeners: [], warning: ""}, editingPort = null, editingBranch = null;
 function notice(message) { $('notice').textContent = message; $('notice').hidden = false; clearTimeout(noticeTimer); noticeTimer = setTimeout(() => $('notice').hidden = true, 6000); }
 async function api(path, body, options = {}) {
@@ -53,6 +59,7 @@ async function restartConsole() {
   if (restarting) return;
   restarting = true;
   $('restart-console').disabled = true;
+  renderConsoleBranch();
   $('restart-recovery').hidden = true;
   $('restart-status').textContent = '正在请求重启…';
   clearTimeout(noticeTimer); $('notice').hidden = true;
@@ -84,9 +91,43 @@ async function restartConsole() {
     $('restart-recovery').hidden = false;
     restarting = false;
     $('restart-console').disabled = false;
+    renderConsoleBranch();
   }
 }
 $('restart-console').onclick = restartConsole;
+function renderConsoleBranch() {
+  const host = $('console-branch');
+  if (!host) return;
+  const branches = consoleInfo && consoleInfo.branches ? consoleInfo.branches : [];
+  if (!branches.length) { host.hidden = true; host.innerHTML = ''; return; }
+  const current = consoleInfo.current || '';
+  const buttons = branches.map(branch => {
+    const name = branch.local_name;
+    const active = current === name;
+    const mark = name === (consoleInfo.default || 'feat') ? ' · 默认' : '';
+    const title = active ? '当前控制台分支' : `切换到 ${name} 并重启 DevDeck`;
+    return `<button type="button" data-console-branch="${escapeHtml(name)}" class="${active ? 'active' : ''}" ${restarting ? 'disabled' : ''} title="${escapeHtml(title)}">${escapeHtml(name)}${mark}</button>`;
+  }).join('');
+  const other = current && !branches.some(item => item.local_name === current)
+    ? `<span class="current-other">当前 ${escapeHtml(current)}</span>` : '';
+  host.hidden = false;
+  host.innerHTML = buttons + other;
+}
+$('console-branch').onclick = async event => {
+  const button = event.target.closest('[data-console-branch]');
+  if (!button || restarting) return;
+  const branch = button.dataset.consoleBranch;
+  if (consoleInfo && consoleInfo.current === branch) return;
+  if (!confirm(`切换控制台到 ${branch} 并重启 DevDeck？托管服务会被停止。`)) return;
+  button.disabled = true;
+  try {
+    await api('/api/console/branch', {branch});
+    await restartConsole();
+  } catch (error) {
+    notice(error.message);
+    button.disabled = false;
+  }
+};
 $('restart-dialog').addEventListener('cancel', event => { if (restarting) event.preventDefault(); });
 for (const [kind, label, command] of [['frontend','前端','npm run dev'], ['backend','后端','python -u app.py']]) {
   $('service-fields').insertAdjacentHTML('beforeend', `<fieldset><legend>${label}服务（可选）</legend><label for="${kind}-directory">工作目录 · 绝对路径</label><input id="${kind}-directory" name="${kind}-directory" placeholder="/home/yourname/projects/my-app"><div class="fields"><div><label for="${kind}-command">启动命令</label><input id="${kind}-command" name="${kind}-command" placeholder="${command}"></div><div><label for="${kind}-port">端口</label><input id="${kind}-port" name="${kind}-port" type="number" min="1" max="65535" placeholder="可选"></div></div></fieldset>`);
@@ -128,7 +169,7 @@ function render() {
   applyBrandLogo();
 }
 async function refreshLogs() { if (activeLog && $('log-dialog').open) { const id = activeLog; const result = await api('/api/logs/' + id); if (activeLog !== id) return; const output = $('log-output'); const atBottom = output.scrollHeight - output.scrollTop - output.clientHeight < 40; output.textContent = result.text; if (atBottom) output.scrollTop = output.scrollHeight; } }
-async function refresh() { if (refreshing || restarting) return; refreshing = true; try { const [next, ports] = await Promise.all([api('/api/projects'), api('/api/ports')]); if (restarting) return; if (JSON.stringify(next) !== JSON.stringify(projects) || !$('projects').innerHTML) { projects = next; render(); } if (JSON.stringify(ports) !== JSON.stringify(portData) || !$('port-rows').innerHTML) { portData = ports; renderPorts(); } await refreshLogs(); } catch (error) { if (!restarting) notice('连接失败：' + error.message); } finally { refreshing = false; } }
+async function refresh() { if (refreshing || restarting) return; refreshing = true; try { const [next, ports, status] = await Promise.all([api('/api/projects'), api('/api/ports'), api('/api/status')]); if (restarting) return; if (JSON.stringify(next) !== JSON.stringify(projects) || !$('projects').innerHTML) { projects = next; render(); } if (JSON.stringify(ports) !== JSON.stringify(portData) || !$('port-rows').innerHTML) { portData = ports; renderPorts(); } if (JSON.stringify(status.console || null) !== JSON.stringify(consoleInfo) || !$('console-branch').innerHTML) { consoleInfo = status.console || null; renderConsoleBranch(); } await refreshLogs(); } catch (error) { if (!restarting) notice('连接失败：' + error.message); } finally { refreshing = false; } }
 $('add').onclick = () => $('add-dialog').showModal();
 document.querySelectorAll('[data-close]').forEach(button => button.onclick = () => $(button.dataset.close).close());
 $('log-dialog').addEventListener('close', () => activeLog = null);

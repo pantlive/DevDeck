@@ -18,6 +18,8 @@ _UNSET_GIT = (
     "GIT_COMMON_DIR",
 )
 _HIDDEN_NAMES = {"HEAD", "FETCH_HEAD", "ORIG_HEAD", "MERGE_HEAD", "CHERRY_PICK_HEAD"}
+CONSOLE_BRANCHES = ("feat", "dev")
+DEFAULT_CONSOLE_BRANCH = "feat"
 _REF_FORMAT = (
     "%(objectname:short)%09%(committerdate:unix)%09"
     "%(committerdate:iso-strict)%09%(refname)%09%(HEAD)%09%(upstream:short)"
@@ -318,6 +320,58 @@ def branch_entry(
     }
 
 
+def console_branch_options(info: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """控制台只提供 feat / dev；同名时本地分支优先于远程跟踪分支。"""
+    if not info:
+        return []
+    options: list[dict[str, Any]] = []
+    for name in CONSOLE_BRANCHES:
+        local = next(
+            (
+                item
+                for item in info["branches"]
+                if item["local_name"] == name and not item["remote"]
+            ),
+            None,
+        )
+        remote = next(
+            (
+                item
+                for item in info["branches"]
+                if item["local_name"] == name and item["remote"]
+            ),
+            None,
+        )
+        match = local or remote
+        if match:
+            options.append(match)
+    return options
+
+
+def resolve_branch_target(info: dict[str, Any], branch: str) -> dict[str, Any] | None:
+    """先精确匹配引用名，再回退到同名本地分支或远程跟踪分支。"""
+    target = next((item for item in info["branches"] if item["name"] == branch), None)
+    if target is not None:
+        return target
+    local = next(
+        (
+            item
+            for item in info["branches"]
+            if item["local_name"] == branch and not item["remote"]
+        ),
+        None,
+    )
+    remote = next(
+        (
+            item
+            for item in info["branches"]
+            if item["local_name"] == branch and item["remote"]
+        ),
+        None,
+    )
+    return local or remote
+
+
 def checkout_branch(directory: Path, branch: str) -> str:
     """在工作区没有已跟踪改动时切换分支；远程跟踪分支会创建本地同名分支。"""
     name = validate_branch(branch)
@@ -328,7 +382,7 @@ def checkout_branch(directory: Path, branch: str) -> str:
         raise ValueError(info["warning"])
     if info["current"] == name:
         return name
-    target = next((item for item in info["branches"] if item["name"] == name), None)
+    target = resolve_branch_target(info, name)
     if target is None:
         raise ValueError(f"找不到分支 {name}")
     if target["local_name"] == info["current"]:
@@ -338,9 +392,9 @@ def checkout_branch(directory: Path, branch: str) -> str:
     repo = Path(info["root"])
     try:
         if target["remote"]:
-            result = run_git(repo, "checkout", "--track", name, timeout=10)
+            result = run_git(repo, "checkout", "--track", target["name"], timeout=10)
         else:
-            result = run_git(repo, "checkout", name, timeout=10)
+            result = run_git(repo, "checkout", target["local_name"], timeout=10)
     except FileNotFoundError as error:
         raise ValueError("未安装 Git，无法切换分支") from error
     except subprocess.TimeoutExpired as error:
