@@ -75,12 +75,13 @@ class RestartHTTPTests(unittest.TestCase):
             self.assertEqual(status, 202)
             self.assertTrue(result["ok"])
             self.assertTrue(shutdown_requested.wait(1))
-            self.assertEqual(request(self.port, "/api/status")[1], {
-                "instance_id": result["instance_id"],
-                "restarting": True,
-            })
+            status_body = request(self.port, "/api/status")[1]
+            self.assertEqual(status_body["instance_id"], result["instance_id"])
+            self.assertTrue(status_body["restarting"])
+            self.assertIn("console", status_body)
             for path in (
-                "/api/restart", "/api/projects", "/api/action", "/api/ports"
+                "/api/restart", "/api/projects", "/api/action", "/api/ports",
+                "/api/console/branch",
             ):
                 with self.subTest(path=path):
                     self.assertEqual(request(self.port, path, {})[0], 503)

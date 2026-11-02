@@ -15,7 +15,10 @@ from typing import Any
 from urllib.parse import urlparse
 
 from devdeck.git import (
+    CONSOLE_BRANCHES,
+    DEFAULT_CONSOLE_BRANCH,
     checkout_branch,
+    console_branch_options,
     fetch_remotes,
     inspect_repo,
     validate_branch,
@@ -23,13 +26,27 @@ from devdeck.git import (
 from devdeck.ports import ensure_available, scan_ports, validate_port
 
 
+def default_console_dir() -> Path:
+    """控制台代码所在仓库；测试可用 DEVDECK_CONSOLE_DIR 指到临时仓库。"""
+    override = os.environ.get("DEVDECK_CONSOLE_DIR", "").strip()
+    if override:
+        return Path(override).expanduser()
+    return Path(__file__).resolve().parent.parent
+
+
 class Manager:
     """保存项目配置，管理当前控制台启动的进程组。"""
 
-    def __init__(self, data_dir: Path) -> None:
+    def __init__(self, data_dir: Path, console_dir: Path | None = None) -> None:
         self.data_dir = data_dir.resolve()
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.config = self.data_dir / "projects.json"
+        self.console_config = self.data_dir / "console.json"
+        self.console_dir = (console_dir or default_console_dir())
+        try:
+            self.console_dir = self.console_dir.expanduser().resolve()
+        except OSError:
+            self.console_dir = self.console_dir.expanduser()
         self.projects = (
             json.loads(self.config.read_text()) if self.config.exists() else []
         )
@@ -312,6 +329,86 @@ class Manager:
                         item["branch"] = actual
             self.save()
 
+    def saved_console_branch(self) -> str:
+        if not self.console_config.exists():
+            return ""
+        try:
+            data = json.loads(self.console_config.read_text())
+        except (OSError, json.JSONDecodeError, TypeError):
+            return ""
+        if not isinstance(data, dict):
+            return ""
+        return str(data.get("branch") or "").strip()
+
+    def save_console_branch(self, branch: str) -> None:
+        temporary = self.console_config.with_suffix(".tmp")
+        temporary.write_text(
+            json.dumps({"branch": branch}, ensure_ascii=False, indent=2)
+        )
+        temporary.replace(self.console_config)
+
+    def console_snapshot(self) -> dict[str, Any]:
+        """控制台自身的 feat/dev 切换状态；默认推荐 feat。"""
+        saved = self.saved_console_branch()
+        info = inspect_repo(self.console_dir)
+        options = console_branch_options(info)
+        names = [item["local_name"] for item in options]
+        if saved in names:
+            preferred = saved
+        elif DEFAULT_CONSOLE_BRANCH in names:
+            preferred = DEFAULT_CONSOLE_BRANCH
+        elif info and info.get("current") in names:
+            preferred = info["current"]
+        else:
+            preferred = names[0] if names else ""
+        return {
+            "root": (info or {}).get("root") or "",
+            "current": (info or {}).get("current") or "",
+            "detached": bool((info or {}).get("detached")),
+            "dirty": bool((info or {}).get("dirty")),
+            "preferred": preferred,
+            "saved": saved,
+            "default": DEFAULT_CONSOLE_BRANCH,
+            "warning": (info or {}).get("warning") or "",
+            "branches": options,
+        }
+
+    def set_console_branch(self, branch: Any) -> str:
+        """把控制台仓库切到 feat 或 dev，并记下下次启用时使用的分支。"""
+        name = validate_branch(branch)
+        if name not in CONSOLE_BRANCHES:
+            raise ValueError("控制台只支持切换 feat 或 dev")
+        with self.lock:
+            info = inspect_repo(self.console_dir)
+            options = console_branch_options(info)
+            if not options:
+                raise ValueError(
+                    (info or {}).get("warning") or "控制台目录不是 Git 仓库"
+                )
+            if not any(item["local_name"] == name for item in options):
+                raise ValueError(f"找不到分支 {name}")
+            current = (info or {}).get("current") or ""
+            if current.startswith("agents/"):
+                raise ValueError("当前控制台运行在任务 worktree 中，不能切换 feat 或 dev")
+            if info and info.get("root"):
+                self.ensure_repo_idle(str(info["root"]))
+            actual = checkout_branch(self.console_dir, name)
+            self.save_console_branch(actual)
+            return actual
+
+    def prepare_console_branch(self) -> None:
+        """启用控制台时检出已保存的分支；尚未选择时保持当前检出，页面默认推荐 feat。"""
+        saved = self.saved_console_branch()
+        if not saved or saved not in CONSOLE_BRANCHES:
+            return
+        info = inspect_repo(self.console_dir)
+        current = (info or {}).get("current") or ""
+        if not info or not info.get("root") or current == saved:
+            return
+        if current.startswith("agents/"):
+            return
+        self.set_console_branch(saved)
+
     def fetch_project(self, payload: dict[str, Any]) -> None:
         """只更新远程跟踪引用，用于发现最新分支，不改变当前检出。"""
         with self.lock:
@@ -491,6 +588,7 @@ def handler_for(manager: Manager) -> type[BaseHTTPRequestHandler]:
                     self.reply(200, {
                         "instance_id": self.server.instance_id,
                         "restarting": self.server.restarting,
+                        "console": manager.console_snapshot(),
                     })
                 elif path == "/api/projects":
                     self.reply(200, manager.snapshot())
@@ -563,6 +661,8 @@ def handler_for(manager: Manager) -> type[BaseHTTPRequestHandler]:
                             manager.fetch_project(payload)
                         else:
                             manager.checkout_project_branch(payload)
+                    elif self.path == "/api/console/branch":
+                        manager.set_console_branch(payload.get("branch"))
                     else:
                         self.reply(404, {"error": "接口不存在"})
                         return
@@ -585,6 +685,10 @@ def main() -> None:
     parser.add_argument("--data-dir", type=Path, default=Path(".devdeck"))
     args = parser.parse_args()
     manager = Manager(args.data_dir)
+    try:
+        manager.prepare_console_branch()
+    except ValueError as error:
+        print(f"控制台分支未切换：{error}", flush=True)
     server = DevDeckServer(("127.0.0.1", args.port), manager)
     stopping = False
 

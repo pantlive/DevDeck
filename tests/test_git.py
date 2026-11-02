@@ -109,7 +109,7 @@ class GitInspectTests(unittest.TestCase):
         remote = next(item for item in info["branches"] if item["name"] == "origin/hotfix")
         self.assertTrue(remote["remote"])
         self.assertEqual(remote["local_name"], "hotfix")
-        actual = checkout_branch(local, "origin/hotfix")
+        actual = checkout_branch(local, "hotfix")
         self.assertEqual(actual, "hotfix")
         self.assertEqual(inspect_repo(local)["current"], "hotfix")
 
