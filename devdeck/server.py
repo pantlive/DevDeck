@@ -20,9 +20,10 @@ from devdeck.git import (
     DEFAULT_CONSOLE_BRANCH,
     checkout_branch,
     console_branch_options,
+    console_branch_rejection,
+    console_branch_target,
     fetch_remotes,
     inspect_repo,
-    resolve_branch_target,
     restrict_console_branches,
     validate_branch,
 )
@@ -293,7 +294,7 @@ class Manager:
                     )
 
     def ensure_console_switch_allowed(self, directory: Path, branch: str) -> None:
-        """控制台自身仓库只允许 feat / dev / main，且不能在任务 worktree 中切换。"""
+        """控制台自身仓库只允许包含控制台代码的 feat / dev / main，且不能在任务 worktree 中切换。"""
         info = inspect_repo(directory)
         console = inspect_repo(self.console_dir)
         if (
@@ -307,9 +308,8 @@ class Manager:
             raise ValueError(
                 "当前 DevDeck 运行在任务 worktree 中，不能切换 feat、dev 或 main"
             )
-        target = resolve_branch_target(info, branch)
-        if target is None or target["local_name"] not in CONSOLE_BRANCHES:
-            raise ValueError(CONSOLE_BRANCH_ERROR)
+        if console_branch_target(info, branch) is None:
+            raise ValueError(console_branch_rejection(info, branch))
 
     def validate_console_branch_target(
         self, directory: Path, branch: str
@@ -324,9 +324,8 @@ class Manager:
             or info["root"] != console.get("root")
         ):
             return
-        target = resolve_branch_target(info, branch)
-        if target is None or target["local_name"] not in CONSOLE_BRANCHES:
-            raise ValueError(CONSOLE_BRANCH_ERROR)
+        if console_branch_target(info, branch) is None:
+            raise ValueError(console_branch_rejection(info, branch))
 
     def prepare_branches(self, services: list[dict[str, Any]]) -> None:
         """启动前按配置检出分支；同一仓库只切一次，冲突的选择直接失败。"""
@@ -405,7 +404,7 @@ class Manager:
         temporary.replace(self.console_config)
 
     def console_snapshot(self) -> dict[str, Any]:
-        """控制台自身的 feat / dev / main 切换状态；默认推荐 feat。"""
+        """控制台自身的 feat / dev / main 切换状态；只列包含控制台代码的分支。"""
         saved = self.saved_console_branch()
         info = inspect_repo(self.console_dir)
         options = console_branch_options(info)
@@ -440,10 +439,15 @@ class Manager:
             options = console_branch_options(info)
             if not options:
                 raise ValueError(
-                    (info or {}).get("warning") or "控制台目录不是 Git 仓库"
+                    (info or {}).get("warning")
+                    or "控制台目录没有包含 DevDeck 代码的可切换分支"
                 )
-            if not any(item["local_name"] == name for item in options):
-                raise ValueError(f"找不到分支 {name}")
+            target = next(
+                (item for item in options if item["local_name"] == name),
+                None,
+            )
+            if target is None:
+                raise ValueError(console_branch_rejection(info, name))
             current = (info or {}).get("current") or ""
             if current.startswith("agents/"):
                 raise ValueError(
@@ -465,6 +469,8 @@ class Manager:
         if not info or not info.get("root") or current == saved:
             return
         if current.startswith("agents/"):
+            return
+        if console_branch_target(info, saved) is None:
             return
         self.set_console_branch(saved)
 

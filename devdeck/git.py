@@ -21,6 +21,8 @@ _HIDDEN_NAMES = {"HEAD", "FETCH_HEAD", "ORIG_HEAD", "MERGE_HEAD", "CHERRY_PICK_H
 CONSOLE_BRANCHES = ("feat", "dev", "main")
 DEFAULT_CONSOLE_BRANCH = "feat"
 CONSOLE_BRANCH_ERROR = "控制台仓库只支持切换 feat、dev 或 main"
+# 用入口文件判断分支是否真的包含控制台代码，避免切到只有 README 的旧 main。
+CONSOLE_CODE_PATH = "devdeck/__main__.py"
 _REF_FORMAT = (
     "%(objectname:short)%09%(committerdate:unix)%09"
     "%(committerdate:iso-strict)%09%(refname)%09%(HEAD)%09%(upstream:short)"
@@ -321,10 +323,22 @@ def branch_entry(
     }
 
 
+def branch_has_console_code(repo: Path, reference: str) -> bool:
+    """检查分支是否包含控制台入口文件，用于排除只有 README 的旧 main。"""
+    try:
+        result = run_git(
+            repo, "cat-file", "-e", f"{reference}:{CONSOLE_CODE_PATH}"
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+    return result.returncode == 0
+
+
 def console_branch_options(info: dict[str, Any] | None) -> list[dict[str, Any]]:
-    """控制台只提供 feat / dev / main；同名时本地分支优先于远程跟踪分支。"""
+    """控制台只提供包含控制台代码的 feat / dev / main；同名时本地分支优先。"""
     if not info:
         return []
+    root = Path(info["root"]) if info.get("root") else None
     options: list[dict[str, Any]] = []
     for name in CONSOLE_BRANCHES:
         local = next(
@@ -344,9 +358,42 @@ def console_branch_options(info: dict[str, Any] | None) -> list[dict[str, Any]]:
             None,
         )
         match = local or remote
-        if match:
+        if match and (
+            root is None or branch_has_console_code(root, match["name"])
+        ):
             options.append(match)
     return options
+
+
+def console_branch_target(
+    info: dict[str, Any] | None, branch: str
+) -> dict[str, Any] | None:
+    """只在包含控制台代码的可选分支中查找目标，兼容远程引用写法。"""
+    target = resolve_branch_target(info, branch) if info else None
+    if target is None:
+        return None
+    return next(
+        (
+            item
+            for item in console_branch_options(info)
+            if item["local_name"] == target["local_name"]
+        ),
+        None,
+    )
+
+
+def console_branch_rejection(
+    info: dict[str, Any] | None, branch: str
+) -> str:
+    """生成控制台分支被拒绝时的提示，区分分支不存在和旧 main 缺代码。"""
+    if branch not in CONSOLE_BRANCHES:
+        return CONSOLE_BRANCH_ERROR
+    if any(
+        item["local_name"] == branch
+        for item in (info or {}).get("branches", [])
+    ):
+        return f"分支 {branch} 不包含 DevDeck 代码，不能切换"
+    return f"找不到分支 {branch}"
 
 
 def restrict_console_branches(info: dict[str, Any] | None) -> dict[str, Any] | None:
