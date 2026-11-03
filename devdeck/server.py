@@ -15,12 +15,15 @@ from typing import Any
 from urllib.parse import urlparse
 
 from devdeck.git import (
+    CONSOLE_BRANCH_ERROR,
     CONSOLE_BRANCHES,
     DEFAULT_CONSOLE_BRANCH,
     checkout_branch,
     console_branch_options,
     fetch_remotes,
     inspect_repo,
+    resolve_branch_target,
+    restrict_console_branches,
     validate_branch,
 )
 from devdeck.ports import ensure_available, scan_ports, validate_port
@@ -74,6 +77,7 @@ class Manager:
         with self.lock:
             ports = self.ports()
             git_cache: dict[str, dict[str, Any] | None] = {}
+            console_root = self.console_root()
             result = json.loads(json.dumps(self.projects))
             for project in result:
                 for service in project["services"]:
@@ -87,20 +91,32 @@ class Manager:
                         pid=process.pid if process and code is None else None,
                         exit_code=code,
                         port_info=self.port_info(service, ports),
-                        git=self.git_info(service["directory"], git_cache),
+                        git=self.git_info(
+                            service["directory"], git_cache, console_root
+                        ),
                     )
             return result
 
+    def console_root(self) -> str:
+        """返回控制台自身工作区根目录，用于识别同仓库的项目服务。"""
+        info = inspect_repo(self.console_dir)
+        return str(info["root"]) if info and info.get("root") else ""
+
     def git_info(
-        self, directory: str, cache: dict[str, dict[str, Any] | None]
+        self,
+        directory: str,
+        cache: dict[str, dict[str, Any] | None],
+        console_root: str = "",
     ) -> dict[str, Any] | None:
         """同一仓库只探测一次，避免一个项目的前后端重复跑 Git。"""
         resolved = str(Path(directory))
         if resolved not in cache:
             info = inspect_repo(Path(directory))
-            cache[resolved] = info
             if info and info.get("root"):
+                if console_root and info["root"] == console_root:
+                    info = restrict_console_branches(info)
                 cache[info["root"]] = info
+            cache[resolved] = info
         return cache[resolved]
 
     def ports(self) -> dict[str, Any]:
@@ -239,6 +255,7 @@ class Manager:
             branch = str(item.get("branch", "")).strip()
             if branch:
                 validate_branch(branch)
+                self.validate_console_branch_target(directory, branch)
             services.append(
                 dict(
                     id=uuid.uuid4().hex,
@@ -275,6 +292,42 @@ class Manager:
                         f"请先停止项目「{project['name']}」的服务，再切换分支"
                     )
 
+    def ensure_console_switch_allowed(self, directory: Path, branch: str) -> None:
+        """控制台自身仓库只允许 feat / dev / main，且不能在任务 worktree 中切换。"""
+        info = inspect_repo(directory)
+        console = inspect_repo(self.console_dir)
+        if (
+            not info
+            or not info.get("root")
+            or not console
+            or info["root"] != console.get("root")
+        ):
+            return
+        if (info.get("current") or "").startswith("agents/"):
+            raise ValueError(
+                "当前 DevDeck 运行在任务 worktree 中，不能切换 feat、dev 或 main"
+            )
+        target = resolve_branch_target(info, branch)
+        if target is None or target["local_name"] not in CONSOLE_BRANCHES:
+            raise ValueError(CONSOLE_BRANCH_ERROR)
+
+    def validate_console_branch_target(
+        self, directory: Path, branch: str
+    ) -> None:
+        """保存配置时也拒绝把控制台仓库指向 agents 等非主线分支。"""
+        info = inspect_repo(directory)
+        console = inspect_repo(self.console_dir)
+        if (
+            not info
+            or not info.get("root")
+            or not console
+            or info["root"] != console.get("root")
+        ):
+            return
+        target = resolve_branch_target(info, branch)
+        if target is None or target["local_name"] not in CONSOLE_BRANCHES:
+            raise ValueError(CONSOLE_BRANCH_ERROR)
+
     def prepare_branches(self, services: list[dict[str, Any]]) -> None:
         """启动前按配置检出分支；同一仓库只切一次，冲突的选择直接失败。"""
         planned: dict[str, str] = {}
@@ -289,6 +342,7 @@ class Manager:
             previous = planned.get(root)
             if previous and previous != branch:
                 raise ValueError("同一仓库的服务选择了不同分支")
+            self.ensure_console_switch_allowed(Path(service["directory"]), branch)
             planned[root] = branch
             owners[root] = service
         for root, branch in planned.items():
@@ -323,6 +377,9 @@ class Manager:
                 raise ValueError("项目包含多个 Git 仓库，请选择要切换的服务")
             for root, service in roots.items():
                 self.ensure_repo_idle(root)
+                self.ensure_console_switch_allowed(
+                    Path(service["directory"]), branch
+                )
                 actual = checkout_branch(Path(service["directory"]), branch)
                 for item in project["services"]:
                     if self.git_root(item["directory"]) == root:
@@ -348,7 +405,7 @@ class Manager:
         temporary.replace(self.console_config)
 
     def console_snapshot(self) -> dict[str, Any]:
-        """控制台自身的 feat/dev 切换状态；默认推荐 feat。"""
+        """控制台自身的 feat / dev / main 切换状态；默认推荐 feat。"""
         saved = self.saved_console_branch()
         info = inspect_repo(self.console_dir)
         options = console_branch_options(info)
@@ -374,10 +431,10 @@ class Manager:
         }
 
     def set_console_branch(self, branch: Any) -> str:
-        """把控制台仓库切到 feat 或 dev，并记下下次启用时使用的分支。"""
+        """把控制台仓库切到 feat、dev 或 main，并记下下次启用时使用的分支。"""
         name = validate_branch(branch)
         if name not in CONSOLE_BRANCHES:
-            raise ValueError("控制台只支持切换 feat 或 dev")
+            raise ValueError(CONSOLE_BRANCH_ERROR)
         with self.lock:
             info = inspect_repo(self.console_dir)
             options = console_branch_options(info)
@@ -389,7 +446,9 @@ class Manager:
                 raise ValueError(f"找不到分支 {name}")
             current = (info or {}).get("current") or ""
             if current.startswith("agents/"):
-                raise ValueError("当前控制台运行在任务 worktree 中，不能切换 feat 或 dev")
+                raise ValueError(
+                    "当前 DevDeck 运行在任务 worktree 中，不能切换 feat、dev 或 main"
+                )
             if info and info.get("root"):
                 self.ensure_repo_idle(str(info["root"]))
             actual = checkout_branch(self.console_dir, name)

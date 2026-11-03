@@ -1,4 +1,4 @@
-"""验证控制台默认 feat、页面可切 dev，以及任务 worktree 拒绝切换。"""
+"""验证控制台 feat/dev/main 切换、过滤 agents 分支，以及任务 worktree 拒绝切换。"""
 
 from __future__ import annotations
 
@@ -23,6 +23,8 @@ class ConsoleBranchTests(unittest.TestCase):
         git(self.repo, "checkout", "-b", "dev")
         commit_file(self.repo, "dev.txt", "dev", "dev", "2021-01-01T00:00:00")
         git(self.repo, "checkout", "feat")
+        git(self.repo, "branch", "main")
+        git(self.repo, "branch", "agents/task-60")
         self.manager = Manager(self.root / "data", console_dir=self.repo)
 
     def tearDown(self) -> None:
@@ -37,7 +39,7 @@ class ConsoleBranchTests(unittest.TestCase):
         self.assertEqual(snapshot["saved"], "")
         self.assertEqual(
             [item["local_name"] for item in snapshot["branches"]],
-            ["feat", "dev"],
+            ["feat", "dev", "main"],
         )
 
     def test_preferred_stays_feat_when_current_is_dev(self) -> None:
@@ -88,8 +90,78 @@ class ConsoleBranchTests(unittest.TestCase):
     def test_other_branches_are_rejected(self) -> None:
         git(self.repo, "checkout", "-b", "topic")
         git(self.repo, "checkout", "feat")
-        with self.assertRaisesRegex(ValueError, "只支持切换 feat 或 dev"):
+        with self.assertRaisesRegex(ValueError, "feat、dev 或 main"):
             self.manager.set_console_branch("topic")
+
+    def test_switch_to_main_persists_and_checks_out(self) -> None:
+        actual = self.manager.set_console_branch("main")
+        self.assertEqual(actual, "main")
+        self.assertEqual(inspect_repo(self.repo)["current"], "main")
+        self.assertEqual(self.manager.saved_console_branch(), "main")
+        self.assertEqual(self.manager.console_snapshot()["preferred"], "main")
+
+    def test_console_branches_exclude_agent_worktree(self) -> None:
+        snapshot = self.manager.console_snapshot()
+        names = [item["local_name"] for item in snapshot["branches"]]
+        self.assertEqual(names, ["feat", "dev", "main"])
+        with self.assertRaisesRegex(ValueError, "feat、dev 或 main"):
+            self.manager.set_console_branch("agents/task-60")
+        self.assertEqual(inspect_repo(self.repo)["current"], "feat")
+
+    def test_console_repo_project_only_lists_mainline_branches(self) -> None:
+        self.manager.add(
+            {
+                "name": "DevDeck",
+                "backend": {
+                    "directory": str(self.repo),
+                    "command": "sleep 60",
+                    "branch": "feat",
+                },
+            }
+        )
+        project = self.manager.projects[0]
+        service = self.manager.snapshot()[0]["services"][0]
+        self.assertEqual(
+            {item["local_name"] for item in service["git"]["branches"]},
+            {"feat", "dev", "main"},
+        )
+        self.assertEqual(service["git"]["latest"], "dev")
+        with self.assertRaisesRegex(ValueError, "feat、dev 或 main"):
+            self.manager.checkout_project_branch(
+                {"project_id": project["id"], "branch": "agents/task-60"}
+            )
+        self.assertEqual(inspect_repo(self.repo)["current"], "feat")
+
+    def test_console_repo_project_refuses_start_on_agent_branch(self) -> None:
+        self.manager.add(
+            {
+                "name": "DevDeck",
+                "backend": {
+                    "directory": str(self.repo),
+                    "command": "sleep 60",
+                    "branch": "feat",
+                },
+            }
+        )
+        self.manager.projects[0]["services"][0]["branch"] = "agents/task-60"
+        with self.assertRaisesRegex(ValueError, "feat、dev 或 main"):
+            self.manager.action(self.manager.projects[0]["id"], "start", None)
+        self.assertFalse(self.manager.processes)
+        self.assertEqual(inspect_repo(self.repo)["current"], "feat")
+
+    def test_console_repo_rejects_agent_branch_when_adding(self) -> None:
+        with self.assertRaisesRegex(ValueError, "feat、dev 或 main"):
+            self.manager.add(
+                {
+                    "name": "DevDeck",
+                    "backend": {
+                        "directory": str(self.repo),
+                        "command": "sleep 60",
+                        "branch": "agents/task-60",
+                    },
+                }
+            )
+        self.assertEqual(self.manager.projects, [])
 
     def test_http_status_and_console_branch_api(self) -> None:
         server = DevDeckServer(("127.0.0.1", 0), self.manager)
@@ -101,15 +173,24 @@ class ConsoleBranchTests(unittest.TestCase):
             page = connection.getresponse().read().decode()
             self.assertIn('id="console-branch"', page)
             self.assertIn("控制台默认使用 feat", page)
-            self.assertIn("可在右上角切换到 dev", page)
+            self.assertIn("可在右上角切换 feat、dev 或 main", page)
             connection.request("GET", "/api/status")
             body = json.loads(connection.getresponse().read())
             self.assertEqual(body["console"]["preferred"], "feat")
             self.assertEqual(body["console"]["current"], "feat")
             self.assertEqual(
                 [item["local_name"] for item in body["console"]["branches"]],
-                ["feat", "dev"],
+                ["feat", "dev", "main"],
             )
+            connection.request(
+                "POST",
+                "/api/console/branch",
+                json.dumps({"branch": "agents/task-60"}),
+                {"Content-Type": "application/json"},
+            )
+            rejected = connection.getresponse()
+            self.assertEqual(rejected.status, 400)
+            self.assertIn("feat、dev 或 main", json.loads(rejected.read())["error"])
             connection.request(
                 "POST",
                 "/api/console/branch",

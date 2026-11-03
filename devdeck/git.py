@@ -18,8 +18,9 @@ _UNSET_GIT = (
     "GIT_COMMON_DIR",
 )
 _HIDDEN_NAMES = {"HEAD", "FETCH_HEAD", "ORIG_HEAD", "MERGE_HEAD", "CHERRY_PICK_HEAD"}
-CONSOLE_BRANCHES = ("feat", "dev")
+CONSOLE_BRANCHES = ("feat", "dev", "main")
 DEFAULT_CONSOLE_BRANCH = "feat"
+CONSOLE_BRANCH_ERROR = "控制台仓库只支持切换 feat、dev 或 main"
 _REF_FORMAT = (
     "%(objectname:short)%09%(committerdate:unix)%09"
     "%(committerdate:iso-strict)%09%(refname)%09%(HEAD)%09%(upstream:short)"
@@ -321,7 +322,7 @@ def branch_entry(
 
 
 def console_branch_options(info: dict[str, Any] | None) -> list[dict[str, Any]]:
-    """控制台只提供 feat / dev；同名时本地分支优先于远程跟踪分支。"""
+    """控制台只提供 feat / dev / main；同名时本地分支优先于远程跟踪分支。"""
     if not info:
         return []
     options: list[dict[str, Any]] = []
@@ -346,6 +347,27 @@ def console_branch_options(info: dict[str, Any] | None) -> list[dict[str, Any]]:
         if match:
             options.append(match)
     return options
+
+
+def restrict_console_branches(info: dict[str, Any] | None) -> dict[str, Any] | None:
+    """把控制台仓库的分支视图裁剪到 feat / dev / main，避免项目卡片列出 agents 分支。"""
+    if not info:
+        return info
+    allowed = {item["name"] for item in console_branch_options(info)}
+    branches = [
+        dict(item)
+        for item in info.get("branches", [])
+        if item["name"] in allowed
+    ]
+    for item in branches:
+        item["latest"] = False
+    latest = branches[0]["name"] if branches else ""
+    if branches:
+        branches[0]["latest"] = True
+    result = dict(info)
+    result["branches"] = branches
+    result["latest"] = latest
+    return result
 
 
 def resolve_branch_target(info: dict[str, Any], branch: str) -> dict[str, Any] | None:
