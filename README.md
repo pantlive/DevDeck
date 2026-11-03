@@ -25,7 +25,7 @@ python -m devdeck
 - 端口管理：查看本机 TCP 监听、IPv4/IPv6 地址、PID、进程名和所属项目，支持搜索与停止托管服务。
 - 检查端口冲突，修改停止服务的端口和命令，通过 `{port}` 或 `PORT` 将端口传给应用。
 - 识别服务目录所属的 Git 仓库，列出本地和已获取的远程跟踪分支，按最后一次提交时间标出最近更新的分支；停止服务后可切换分支再启动。
-- 控制台自身默认使用 `feat` 分支，页面右上角可切换 `feat`、`dev` 或 `main` 并重启。
+- 控制台自身默认使用 `feat` 分支，页面右上角可切换 `feat`、`dev` 或 `main` 并重启；不包含控制台入口代码的分支不会列出，避免切到只有 README 的旧 `main`。
 
 例如，前端目录填写 `/home/yourname/projects/demo/web`，命令填写 `npm run dev -- --host 127.0.0.1`，端口填写 `5173`；后端目录填写 `/home/yourname/projects/demo/api`，命令填写 `conda run --no-capture-output -n my-api python -u app.py`，端口填写 `8000`。
 
@@ -71,7 +71,7 @@ python -m devdeck --port 7310 --data-dir /home/yourname/.local/share/devdeck
 
 选择分支后会记入项目配置，下次启动先检出该分支再运行命令，并设置 `DEVDECK_BRANCH` 环境变量。同一 Git 仓库的前后端必须选择同一分支。没有配置分支时，沿用目录里当前检出的内容启动。
 
-控制台自己的代码仓库另有 feat / dev / main 切换：尚未选择时页面把 `feat` 标为默认，不会在启动时强行改当前分支；选定后写入 `.devdeck/console.json`，下次启用会先检出该分支再提供页面。切换会停止托管服务并重启控制台。DevDeck 自身仓库作为项目添加时也只提供 `feat`、`dev`、`main` 三个分支，不会列出或切换到 `agents/` 任务分支。任务 worktree（`agents/` 分支）上运行时拒绝切换，以免改掉执行中的 Agent 目录。工作区有未提交改动、或目标分支已被其他 worktree 占用时，与项目分支切换相同，会直接失败。
+控制台自己的代码仓库另有 feat / dev / main 切换：尚未选择时页面把 `feat` 标为默认，不会在启动时强行改当前分支；选定后写入 `.devdeck/console.json`，下次启用会先检出该分支再提供页面。切换会停止托管服务并重启控制台。DevDeck 自身仓库作为项目添加时也只提供 `feat`、`dev`、`main` 三个分支，且只保留真正包含控制台入口代码的分支（例如当前仓库只有 README 的旧 `main` 会被排除），不会列出或切换到 `agents/` 任务分支。任务 worktree（`agents/` 分支）上运行时拒绝切换，以免改掉执行中的 Agent 目录。工作区有未提交改动、或目标分支已被其他 worktree 占用时，与项目分支切换相同，会直接失败。
 
 远程是否有更新取决于本机已经 `fetch` 到的跟踪引用。对话框里的「刷新远程」会执行 `git fetch --all --prune`，不会改当前分支；未配置远程、需要交互式凭据或超时时会提示失败。DevDeck 不会自动 fetch，也不会用 `git reset --hard` 或强制检出丢弃改动。远程分支没有本地同名分支时，切换会创建跟踪分支。分支已被其他 worktree 占用、或仓库 hooks 被忽略（切换时禁用）时，以 Git 返回的错误为准。
 
@@ -105,4 +105,4 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass \
 python -m unittest discover -s tests -v
 ```
 
-测试覆盖真实服务启停、重复启动、端口释放、子进程停止、配置恢复、HTTP 来源限制、IPv4/IPv6 占用检测、绑定未监听的端口冲突、批量启动重复端口、启动中的端口预留、端口修改、占位符和环境变量生效、Git 分支列表与最近更新检测、脏工作区拒绝切换、按配置分支启动、远程跟踪分支检出、控制台默认 feat 与页面切换 feat/dev/main、控制台仓库过滤 agents 分支、任务 worktree 拒绝切换控制台分支、控制台真实自重启与进程清理，以及登录自启使用的持久 systemd 用户单元。
+测试覆盖真实服务启停、重复启动、端口释放、子进程停止、配置恢复、HTTP 来源限制、IPv4/IPv6 占用检测、绑定未监听的端口冲突、批量启动重复端口、启动中的端口预留、端口修改、占位符和环境变量生效、Git 分支列表与最近更新检测、脏工作区拒绝切换、按配置分支启动、远程跟踪分支检出、控制台默认 feat 与页面切换 feat/dev/main、控制台仓库过滤 agents 分支和缺少代码的旧 main、任务 worktree 拒绝切换控制台分支、控制台真实自重启与进程清理，以及登录自启使用的持久 systemd 用户单元。

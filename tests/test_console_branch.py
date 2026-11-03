@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import threading
 import unittest
 from http.client import HTTPConnection
@@ -20,6 +21,14 @@ class ConsoleBranchTests(unittest.TestCase):
         self.root = Path(self.temporary.name)
         self.repo = init_repo(self.root / "console", "feat")
         commit_file(self.repo, "README", "feat", "init", "2020-01-01T00:00:00")
+        (self.repo / "devdeck").mkdir()
+        commit_file(
+            self.repo,
+            "devdeck/__main__.py",
+            "print('console')",
+            "console",
+            "2020-01-02T00:00:00",
+        )
         git(self.repo, "checkout", "-b", "dev")
         commit_file(self.repo, "dev.txt", "dev", "dev", "2021-01-01T00:00:00")
         git(self.repo, "checkout", "feat")
@@ -220,6 +229,87 @@ class ConsoleBranchTests(unittest.TestCase):
             server.shutdown()
             server.server_close()
             worker.join()
+
+
+class LegacyMainTests(unittest.TestCase):
+    """origin/main 只有 README 时，不应出现在控制台可切换分支中。"""
+
+    def setUp(self) -> None:
+        self.temporary = TemporaryDirectory()
+        self.root = Path(self.temporary.name)
+        origin = init_repo(self.root / "origin", "main")
+        commit_file(
+            origin, "README.md", "legacy", "init", "2020-01-01T00:00:00"
+        )
+        git(origin, "checkout", "-b", "feat")
+        (origin / "devdeck").mkdir()
+        commit_file(
+            origin,
+            "devdeck/__main__.py",
+            "print('console')",
+            "console",
+            "2021-01-01T00:00:00",
+        )
+        git(origin, "checkout", "-b", "dev")
+        commit_file(
+            origin, "dev.txt", "dev", "dev", "2022-01-01T00:00:00"
+        )
+        git(origin, "checkout", "feat")
+        self.repo = self.root / "console"
+        subprocess.run(
+            ["git", "clone", str(origin), str(self.repo)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        git(self.repo, "config", "user.name", "DevDeck Test")
+        git(self.repo, "config", "user.email", "devdeck@example.com")
+        git(self.repo, "checkout", "feat")
+        self.manager = Manager(self.root / "data", console_dir=self.repo)
+
+    def tearDown(self) -> None:
+        self.manager.close()
+        self.temporary.cleanup()
+
+    def test_legacy_main_is_hidden_and_rejected(self) -> None:
+        snapshot = self.manager.console_snapshot()
+        self.assertEqual(
+            [item["local_name"] for item in snapshot["branches"]],
+            ["feat", "dev"],
+        )
+        self.assertEqual(snapshot["preferred"], "feat")
+        with self.assertRaisesRegex(ValueError, "不包含 DevDeck 代码"):
+            self.manager.set_console_branch("main")
+        self.assertEqual(inspect_repo(self.repo)["current"], "feat")
+
+    def test_saved_legacy_main_is_skipped_on_startup(self) -> None:
+        self.manager.save_console_branch("main")
+        self.manager.prepare_console_branch()
+        self.assertEqual(inspect_repo(self.repo)["current"], "feat")
+        self.assertEqual(self.manager.console_snapshot()["preferred"], "feat")
+
+    def test_legacy_main_not_offered_for_project(self) -> None:
+        self.manager.add(
+            {
+                "name": "DevDeck",
+                "backend": {
+                    "directory": str(self.repo),
+                    "command": "sleep 60",
+                    "branch": "feat",
+                },
+            }
+        )
+        project = self.manager.projects[0]
+        service = self.manager.snapshot()[0]["services"][0]
+        self.assertEqual(
+            {item["local_name"] for item in service["git"]["branches"]},
+            {"feat", "dev"},
+        )
+        with self.assertRaisesRegex(ValueError, "不包含 DevDeck 代码"):
+            self.manager.checkout_project_branch(
+                {"project_id": project["id"], "branch": "main"}
+            )
+        self.assertEqual(inspect_repo(self.repo)["current"], "feat")
 
 
 if __name__ == "__main__":
