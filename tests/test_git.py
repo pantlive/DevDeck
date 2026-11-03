@@ -213,6 +213,18 @@ class GitManagerTests(unittest.TestCase):
         self.assertEqual(snapshot["git"]["latest"], "feat")
         self.assertEqual(snapshot["branch"], "")
 
+    def test_non_console_repo_can_switch_to_agent_branch(self) -> None:
+        git(self.repo, "checkout", "-b", "agents/task-60")
+        git(self.repo, "checkout", "main")
+        project = self.add_project()
+        self.manager.checkout_project_branch(
+            {"project_id": project["id"], "branch": "agents/task-60"}
+        )
+        self.assertEqual(inspect_repo(self.repo)["current"], "agents/task-60")
+        self.assertEqual(
+            self.manager.projects[0]["services"][0]["branch"], "agents/task-60"
+        )
+
     def test_start_checks_out_configured_branch(self) -> None:
         project = self.add_project("feat")
         service = project["services"][0]
