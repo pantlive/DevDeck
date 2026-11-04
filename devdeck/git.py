@@ -19,7 +19,8 @@ _UNSET_GIT = (
 )
 _HIDDEN_NAMES = {"HEAD", "FETCH_HEAD", "ORIG_HEAD", "MERGE_HEAD", "CHERRY_PICK_HEAD"}
 CONSOLE_BRANCHES = ("feat", "dev", "main")
-DEFAULT_CONSOLE_BRANCH = "feat"
+# 系统启动默认基于 dev：日常集成分支是 dev，feat 和 main 只在需要时手动切换。
+DEFAULT_CONSOLE_BRANCH = "dev"
 CONSOLE_BRANCH_ERROR = "控制台仓库只支持切换 feat、dev 或 main"
 # 用入口文件判断分支是否真的包含控制台代码，避免切到只有 README 的旧 main。
 CONSOLE_CODE_PATH = "devdeck/__main__.py"

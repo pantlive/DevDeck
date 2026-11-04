@@ -40,25 +40,37 @@ class ConsoleBranchTests(unittest.TestCase):
         self.manager.close()
         self.temporary.cleanup()
 
-    def test_default_preferred_branch_is_feat(self) -> None:
+    def test_default_preferred_branch_is_dev(self) -> None:
         snapshot = self.manager.console_snapshot()
         self.assertEqual(snapshot["current"], "feat")
-        self.assertEqual(snapshot["default"], "feat")
-        self.assertEqual(snapshot["preferred"], "feat")
+        self.assertEqual(snapshot["default"], "dev")
+        self.assertEqual(snapshot["preferred"], "dev")
         self.assertEqual(snapshot["saved"], "")
         self.assertEqual(
             [item["local_name"] for item in snapshot["branches"]],
             ["feat", "dev", "main"],
         )
 
-    def test_preferred_stays_feat_when_current_is_dev(self) -> None:
-        git(self.repo, "checkout", "dev")
-        snapshot = self.manager.console_snapshot()
-        self.assertEqual(snapshot["current"], "dev")
-        self.assertEqual(snapshot["preferred"], "feat")
+    def test_startup_checks_out_default_dev_without_saving(self) -> None:
         self.manager.prepare_console_branch()
         self.assertEqual(inspect_repo(self.repo)["current"], "dev")
         self.assertEqual(self.manager.saved_console_branch(), "")
+        self.assertEqual(self.manager.console_snapshot()["preferred"], "dev")
+        # 再次启动停在 dev 上时不做多余切换。
+        self.manager.prepare_console_branch()
+        self.assertEqual(inspect_repo(self.repo)["current"], "dev")
+
+    def test_startup_keeps_saved_branch_over_default(self) -> None:
+        self.manager.save_console_branch("main")
+        self.manager.prepare_console_branch()
+        self.assertEqual(inspect_repo(self.repo)["current"], "main")
+        self.assertEqual(self.manager.saved_console_branch(), "main")
+
+    def test_startup_reports_dirty_worktree_instead_of_switching(self) -> None:
+        (self.repo / "README").write_text("changed", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "未提交改动"):
+            self.manager.prepare_console_branch()
+        self.assertEqual(inspect_repo(self.repo)["current"], "feat")
 
     def test_switch_to_dev_persists_and_checks_out(self) -> None:
         actual = self.manager.set_console_branch("dev")
@@ -181,12 +193,13 @@ class ConsoleBranchTests(unittest.TestCase):
             connection.request("GET", "/")
             page = connection.getresponse().read().decode()
             self.assertIn('id="console-branch"', page)
-            self.assertIn("控制台默认使用 feat", page)
+            self.assertIn("控制台启动默认基于 dev", page)
             self.assertIn("可在右上角切换 feat、dev 或 main", page)
             connection.request("GET", "/api/status")
             body = json.loads(connection.getresponse().read())
-            self.assertEqual(body["console"]["preferred"], "feat")
+            self.assertEqual(body["console"]["preferred"], "dev")
             self.assertEqual(body["console"]["current"], "feat")
+            self.assertEqual(body["console"]["default"], "dev")
             self.assertEqual(
                 [item["local_name"] for item in body["console"]["branches"]],
                 ["feat", "dev", "main"],
@@ -277,16 +290,17 @@ class LegacyMainTests(unittest.TestCase):
             [item["local_name"] for item in snapshot["branches"]],
             ["feat", "dev"],
         )
-        self.assertEqual(snapshot["preferred"], "feat")
+        self.assertEqual(snapshot["preferred"], "dev")
         with self.assertRaisesRegex(ValueError, "不包含 DevDeck 代码"):
             self.manager.set_console_branch("main")
         self.assertEqual(inspect_repo(self.repo)["current"], "feat")
 
-    def test_saved_legacy_main_is_skipped_on_startup(self) -> None:
+    def test_saved_legacy_main_falls_back_to_default_dev_on_startup(self) -> None:
         self.manager.save_console_branch("main")
         self.manager.prepare_console_branch()
-        self.assertEqual(inspect_repo(self.repo)["current"], "feat")
-        self.assertEqual(self.manager.console_snapshot()["preferred"], "feat")
+        self.assertEqual(inspect_repo(self.repo)["current"], "dev")
+        self.assertEqual(self.manager.console_snapshot()["preferred"], "dev")
+        self.assertEqual(self.manager.saved_console_branch(), "main")
 
     def test_legacy_main_not_offered_for_project(self) -> None:
         self.manager.add(

@@ -460,19 +460,29 @@ class Manager:
             return actual
 
     def prepare_console_branch(self) -> None:
-        """启用控制台时检出已保存的分支；尚未选择时保持当前检出，页面默认推荐 feat。"""
-        saved = self.saved_console_branch()
-        if not saved or saved not in CONSOLE_BRANCHES:
-            return
+        """启用控制台时先检出分支：优先保存的选择，没有可用选择时回到默认 dev。"""
         info = inspect_repo(self.console_dir)
-        current = (info or {}).get("current") or ""
-        if not info or not info.get("root") or current == saved:
+        if not info or not info.get("root"):
             return
+        current = info.get("current") or ""
         if current.startswith("agents/"):
             return
-        if console_branch_target(info, saved) is None:
+        saved = self.saved_console_branch()
+        if (
+            saved
+            and saved in CONSOLE_BRANCHES
+            and console_branch_target(info, saved) is not None
+        ):
+            if current != saved:
+                self.set_console_branch(saved)
             return
-        self.set_console_branch(saved)
+        # 未选择、或保存的分支已不可用（例如只剩 README 的旧 main）时基于默认分支启动。
+        if current == DEFAULT_CONSOLE_BRANCH:
+            return
+        if console_branch_target(info, DEFAULT_CONSOLE_BRANCH) is None:
+            return
+        # 默认分支只在启动时检出，不写入 console.json，选择权仍留给页面。
+        checkout_branch(self.console_dir, DEFAULT_CONSOLE_BRANCH)
 
     def fetch_project(self, payload: dict[str, Any]) -> None:
         """只更新远程跟踪引用，用于发现最新分支，不改变当前检出。"""
