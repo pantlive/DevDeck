@@ -513,6 +513,62 @@ def restrict_console_branches(info: dict[str, Any] | None) -> dict[str, Any] | N
     return result
 
 
+def latest_console_option(info: dict[str, Any] | None) -> dict[str, Any] | None:
+    """最近更新且含控制台代码的 feat / dev / main；按已获取引用的提交时间计算。"""
+    restricted = restrict_console_branches(info)
+    branches = (restricted or {}).get("branches") or []
+    return branches[0] if branches else None
+
+
+def checkout_latest_console_branch(directory: Path) -> str:
+    """切到最近更新的控制台分支，并在已获取的上游可快进时跟上最新提交。"""
+    info = inspect_repo(directory)
+    if info is None or not info["root"]:
+        raise ValueError(
+            info["warning"] if info and info.get("warning") else "服务目录不是 Git 仓库"
+        )
+    current = info.get("current") or ""
+    if current.startswith("agents/"):
+        raise ValueError(
+            "当前 DevDeck 运行在任务 worktree 中，不能切换 feat、dev 或 main"
+        )
+    target = latest_console_option(info)
+    if target is None:
+        raise ValueError("控制台目录没有包含 DevDeck 代码的可切换分支")
+    actual = checkout_console_branch(directory, target["local_name"])
+    after = inspect_repo(directory)
+    if after is None or not after.get("root"):
+        return actual
+    local = next(
+        (
+            item
+            for item in after["branches"]
+            if item["local_name"] == actual and not item["remote"]
+        ),
+        None,
+    )
+    upstream = (local or {}).get("upstream") or ""
+    upstream_commit = (local or {}).get("upstream_commit") or ""
+    if (
+        not upstream
+        or not upstream_commit
+        or upstream_commit == (local or {}).get("commit")
+    ):
+        return actual
+    if after.get("dirty"):
+        raise ValueError("工作区有未提交改动，无法快进到最新提交")
+    repo = Path(after["root"])
+    try:
+        result = run_git(repo, "merge", "--ff-only", upstream, timeout=10)
+    except FileNotFoundError as error:
+        raise ValueError("未安装 Git，无法快进到最新提交") from error
+    except subprocess.TimeoutExpired as error:
+        raise ValueError("快进到最新提交超时") from error
+    if result.returncode != 0:
+        raise ValueError(f"无法快进到最新提交：{public_git_error(result)}")
+    return actual
+
+
 def resolve_branch_target(info: dict[str, Any], branch: str) -> dict[str, Any] | None:
     """先精确匹配引用名，再回退到同名本地分支或远程跟踪分支。"""
     target = next((item for item in info["branches"] if item["name"] == branch), None)

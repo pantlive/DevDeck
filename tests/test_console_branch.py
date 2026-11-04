@@ -11,7 +11,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from tests.test_git import commit_file, git, init_repo
-from devdeck.git import inspect_repo
+from devdeck.git import checkout_latest_console_branch, inspect_repo, latest_console_option
 from devdeck.server import DevDeckServer, Manager
 
 
@@ -49,6 +49,14 @@ class ConsoleBranchTests(unittest.TestCase):
         self.assertEqual(
             [item["local_name"] for item in snapshot["branches"]],
             ["feat", "dev", "main"],
+        )
+        self.assertEqual(snapshot["latest"], "dev")
+        self.assertEqual(
+            {
+                item["local_name"]: item["latest"]
+                for item in snapshot["branches"]
+            },
+            {"feat": False, "dev": True, "main": False},
         )
 
     def test_startup_checks_out_default_dev_without_saving(self) -> None:
@@ -211,7 +219,8 @@ class ConsoleBranchTests(unittest.TestCase):
             page = connection.getresponse().read().decode()
             self.assertIn('id="console-branch"', page)
             self.assertIn("控制台启动默认基于 dev", page)
-            self.assertIn("可在右上角或项目卡片切换 feat、dev 或 main", page)
+            self.assertIn("切到最近更新的 feat / dev / main", page)
+            self.assertIn("也可在右上角或项目卡片手动切换", page)
             self.assertIn("branch-skip", page)
             connection.request("GET", "/api/status")
             body = json.loads(connection.getresponse().read())
@@ -223,6 +232,14 @@ class ConsoleBranchTests(unittest.TestCase):
             self.assertEqual(
                 [item["local_name"] for item in body["console"]["branches"]],
                 ["feat", "dev", "main"],
+            )
+            self.assertEqual(body["console"]["latest"], "dev")
+            self.assertTrue(
+                next(
+                    item
+                    for item in body["console"]["branches"]
+                    if item["local_name"] == "dev"
+                )["latest"]
             )
             connection.request(
                 "POST",
@@ -520,6 +537,153 @@ class ConsoleProjectSyncTests(unittest.TestCase):
             server.shutdown()
             server.server_close()
             worker.join()
+
+
+class LatestConsoleRestartTests(unittest.TestCase):
+    """一键重启应绑定最近更新的控制台分支；不能切时仍重启。"""
+
+    def setUp(self) -> None:
+        self.temporary = TemporaryDirectory()
+        self.root = Path(self.temporary.name)
+        self.repo = init_repo(self.root / "console", "feat")
+        commit_file(self.repo, "README", "feat", "init", "2020-01-01T00:00:00")
+        (self.repo / "devdeck").mkdir()
+        commit_file(
+            self.repo,
+            "devdeck/__main__.py",
+            "print('console')",
+            "console",
+            "2020-01-02T00:00:00",
+        )
+        git(self.repo, "checkout", "-b", "dev")
+        commit_file(self.repo, "dev.txt", "dev", "dev", "2021-01-01T00:00:00")
+        git(self.repo, "checkout", "feat")
+        git(self.repo, "branch", "main")
+        self.manager = Manager(self.root / "data", console_dir=self.repo)
+
+    def tearDown(self) -> None:
+        self.manager.close()
+        self.temporary.cleanup()
+
+    def test_latest_option_is_newest_console_branch(self) -> None:
+        option = latest_console_option(inspect_repo(self.repo))
+        self.assertIsNotNone(option)
+        self.assertEqual(option["local_name"], "dev")
+        self.assertEqual(checkout_latest_console_branch(self.repo), "dev")
+        self.assertEqual(inspect_repo(self.repo)["current"], "dev")
+
+    def test_prepare_restart_binds_latest_and_saves(self) -> None:
+        self.manager.add(
+            {
+                "name": "DevDeck",
+                "backend": {
+                    "directory": str(self.repo),
+                    "command": "sleep 60",
+                    "branch": "feat",
+                },
+            }
+        )
+        bound = self.manager.prepare_restart()
+        self.assertEqual(bound, "dev")
+        self.assertEqual(inspect_repo(self.repo)["current"], "dev")
+        self.assertEqual(self.manager.saved_console_branch(), "dev")
+        self.assertEqual(
+            self.manager.projects[0]["services"][0]["branch"], "dev"
+        )
+
+    def test_http_restart_reports_latest_branch_without_checking_out(self) -> None:
+        server = DevDeckServer(("127.0.0.1", 0), self.manager)
+        worker = threading.Thread(target=server.serve_forever)
+        worker.start()
+        try:
+            connection = HTTPConnection(
+                "127.0.0.1", server.server_port, timeout=2
+            )
+            connection.request(
+                "POST",
+                "/api/restart",
+                json.dumps({}),
+                {"Content-Type": "application/json"},
+            )
+            response = connection.getresponse()
+            self.assertEqual(response.status, 202)
+            self.assertEqual(json.loads(response.read())["branch"], "dev")
+            # 真正检出发生在停掉托管进程之后、exec 之前，避免拖住 HTTP 响应。
+            self.assertEqual(inspect_repo(self.repo)["current"], "feat")
+            self.assertEqual(self.manager.saved_console_branch(), "")
+            connection.close()
+        finally:
+            server.shutdown()
+            server.server_close()
+            worker.join()
+
+    def test_dirty_worktree_skips_bind_but_prepare_restart_returns(self) -> None:
+        (self.repo / "README").write_text("changed", encoding="utf-8")
+        self.assertEqual(self.manager.planned_restart_branch(), "")
+        bound = self.manager.prepare_restart()
+        self.assertEqual(bound, "")
+        self.assertEqual(inspect_repo(self.repo)["current"], "feat")
+        self.assertEqual(self.manager.saved_console_branch(), "")
+        self.assertIn("未提交改动", self.manager.console_skip_reason)
+
+    def test_agent_worktree_skips_bind(self) -> None:
+        git(self.repo, "checkout", "-b", "agents/task-75")
+        self.assertEqual(self.manager.planned_restart_branch(), "")
+        bound = self.manager.prepare_restart()
+        self.assertEqual(bound, "")
+        self.assertEqual(inspect_repo(self.repo)["current"], "agents/task-75")
+        self.assertIn("任务 worktree", self.manager.console_skip_reason)
+
+
+class LatestConsoleFastForwardTests(unittest.TestCase):
+    """绑定最新分支时应快进到已获取的上游。"""
+
+    def setUp(self) -> None:
+        self.temporary = TemporaryDirectory()
+        self.root = Path(self.temporary.name)
+        origin = init_repo(self.root / "origin", "feat")
+        commit_file(origin, "README", "feat", "init", "2020-01-01T00:00:00")
+        (origin / "devdeck").mkdir()
+        commit_file(
+            origin,
+            "devdeck/__main__.py",
+            "print('console')",
+            "console",
+            "2020-01-02T00:00:00",
+        )
+        git(origin, "checkout", "-b", "dev")
+        commit_file(origin, "dev.txt", "old", "dev", "2021-01-01T00:00:00")
+        git(origin, "checkout", "feat")
+        git(origin, "branch", "main")
+        self.repo = self.root / "console"
+        subprocess.run(
+            ["git", "clone", str(origin), str(self.repo)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        git(self.repo, "config", "user.name", "DevDeck Test")
+        git(self.repo, "config", "user.email", "devdeck@example.com")
+        git(self.repo, "checkout", "-b", "dev", "origin/dev")
+        git(self.repo, "checkout", "feat")
+        git(origin, "checkout", "dev")
+        commit_file(
+            origin, "dev.txt", "newer", "dev ahead", "2024-01-01T00:00:00"
+        )
+        git(self.repo, "fetch", "origin")
+        self.origin = origin
+        self.manager = Manager(self.root / "data", console_dir=self.repo)
+
+    def tearDown(self) -> None:
+        self.manager.close()
+        self.temporary.cleanup()
+
+    def test_bind_latest_fast_forwards_behind_dev(self) -> None:
+        bound = self.manager.bind_latest_console_branch()
+        self.assertEqual(bound, "dev")
+        self.assertEqual(inspect_repo(self.repo)["current"], "dev")
+        self.assertEqual((self.repo / "dev.txt").read_text(encoding="utf-8"), "newer")
+        self.assertEqual(self.manager.saved_console_branch(), "dev")
 
 
 if __name__ == "__main__":

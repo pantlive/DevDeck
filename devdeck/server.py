@@ -20,11 +20,13 @@ from devdeck.git import (
     DEFAULT_CONSOLE_BRANCH,
     checkout_branch,
     checkout_console_branch,
+    checkout_latest_console_branch,
     console_branch_options,
     console_branch_rejection,
     console_branch_target,
     fetch_remotes,
     inspect_repo,
+    latest_console_option,
     restrict_console_branches,
     validate_branch,
 )
@@ -447,6 +449,10 @@ class Manager:
         saved = self.saved_console_branch()
         info = inspect_repo(self.console_dir)
         options = console_branch_options(info)
+        latest = latest_console_option(info)
+        latest_local = (latest or {}).get("local_name") or ""
+        for item in options:
+            item["latest"] = bool(latest_local) and item["local_name"] == latest_local
         names = [item["local_name"] for item in options]
         current = (info or {}).get("current") or ""
         if saved in names:
@@ -468,6 +474,7 @@ class Manager:
             "default": DEFAULT_CONSOLE_BRANCH,
             "warning": (info or {}).get("warning") or "",
             "branches": options,
+            "latest": latest_local,
             "switchable": not on_task,
             "skipped": self.console_skip_reason,
         }
@@ -503,6 +510,33 @@ class Manager:
             self.sync_console_project_branches(actual)
             self.console_skip_reason = ""
             return actual
+
+    def planned_restart_branch(self) -> str:
+        """重启响应里提前告诉页面将绑定哪条分支；不能切时返回空。"""
+        info = inspect_repo(self.console_dir)
+        current = (info or {}).get("current") or ""
+        if current.startswith("agents/") or (info or {}).get("dirty"):
+            return ""
+        option = latest_console_option(info)
+        return (option or {}).get("local_name") or ""
+
+    def bind_latest_console_branch(self) -> str:
+        """切到最近更新的 feat / dev / main 并记下；不能切时保留原因，不抛给调用方。"""
+        try:
+            actual = checkout_latest_console_branch(self.console_dir)
+        except ValueError as error:
+            self.console_skip_reason = str(error)
+            return ""
+        self.save_console_branch(actual)
+        self.sync_console_project_branches(actual)
+        self.console_skip_reason = ""
+        return actual
+
+    def prepare_restart(self) -> str:
+        """先停托管进程，再绑定最近更新的控制台分支；WSL 里的控制台进程随后 exec 重启。"""
+        for service_id in list(self.processes):
+            self.stop(service_id)
+        return self.bind_latest_console_branch()
 
     def prepare_console_branch(self) -> None:
         """启用控制台时先检出分支：优先保存的选择，没有可用选择时回到默认 dev。"""
@@ -771,11 +805,13 @@ def handler_for(manager: Manager) -> type[BaseHTTPRequestHandler]:
                         self.reply(503, {"error": "DevDeck 正在重启，请稍候"})
                         return
                     if self.path == "/api/restart":
+                        planned = manager.planned_restart_branch()
                         self.server.restarting = True
                         try:
                             self.reply(202, {
                                 "ok": True,
                                 "instance_id": self.server.instance_id,
+                                "branch": planned,
                             })
                             self.wfile.flush()
                         finally:
@@ -850,5 +886,10 @@ def main() -> None:
         manager.close()
     if server.restarting and not stopping:
         print("DevDeck 正在重启…", flush=True)
+        bound = manager.bind_latest_console_branch()
+        if bound:
+            print(f"已绑定控制台分支 {bound}", flush=True)
+        elif manager.console_skip_reason:
+            print(f"控制台分支未切换：{manager.console_skip_reason}", flush=True)
         # 保留解释器选项、启动参数、环境和工作目录；PID 不变，systemd 无需重配。
         os.execv(sys.executable, [sys.executable, *sys.orig_argv[1:]])
