@@ -19,6 +19,7 @@ from devdeck.git import (
     CONSOLE_BRANCHES,
     DEFAULT_CONSOLE_BRANCH,
     checkout_branch,
+    checkout_console_branch,
     console_branch_options,
     console_branch_rejection,
     console_branch_target,
@@ -56,6 +57,7 @@ class Manager:
         )
         self.processes: dict[str, subprocess.Popen[bytes]] = {}
         self.lock = threading.RLock()
+        self.console_skip_reason = ""
 
     def save(self) -> None:
         """原子替换配置，避免写入中断破坏已有配置。"""
@@ -293,18 +295,23 @@ class Manager:
                         f"请先停止项目「{project['name']}」的服务，再切换分支"
                     )
 
-    def ensure_console_switch_allowed(self, directory: Path, branch: str) -> None:
-        """控制台自身仓库只允许包含控制台代码的 feat / dev / main，且不能在任务 worktree 中切换。"""
+    def is_console_repo(self, directory: Path) -> bool:
+        """服务目录和控制台是否是同一 Git 工作区。"""
         info = inspect_repo(directory)
         console = inspect_repo(self.console_dir)
-        if (
-            not info
-            or not info.get("root")
-            or not console
-            or info["root"] != console.get("root")
-        ):
+        return bool(
+            info
+            and console
+            and info.get("root")
+            and info["root"] == console.get("root")
+        )
+
+    def ensure_console_switch_allowed(self, directory: Path, branch: str) -> None:
+        """控制台自身仓库只允许包含控制台代码的 feat / dev / main，且不能在任务 worktree 中切换。"""
+        if not self.is_console_repo(directory):
             return
-        if (info.get("current") or "").startswith("agents/"):
+        info = inspect_repo(directory)
+        if (info or {}).get("current", "").startswith("agents/"):
             raise ValueError(
                 "当前 DevDeck 运行在任务 worktree 中，不能切换 feat、dev 或 main"
             )
@@ -315,15 +322,9 @@ class Manager:
         self, directory: Path, branch: str
     ) -> None:
         """保存配置时也拒绝把控制台仓库指向 agents 等非主线分支。"""
-        info = inspect_repo(directory)
-        console = inspect_repo(self.console_dir)
-        if (
-            not info
-            or not info.get("root")
-            or not console
-            or info["root"] != console.get("root")
-        ):
+        if not self.is_console_repo(directory):
             return
+        info = inspect_repo(directory)
         if console_branch_target(info, branch) is None:
             raise ValueError(console_branch_rejection(info, branch))
 
@@ -346,15 +347,23 @@ class Manager:
             owners[root] = service
         for root, branch in planned.items():
             self.ensure_repo_idle(root)
-            actual = checkout_branch(Path(owners[root]["directory"]), branch)
+            directory = Path(owners[root]["directory"])
+            actual = (
+                checkout_console_branch(directory, branch)
+                if self.is_console_repo(directory)
+                else checkout_branch(directory, branch)
+            )
             for project in self.projects:
                 for service in project["services"]:
                     if self.git_root(service["directory"]) == root:
                         service["branch"] = actual
             self.save()
 
-    def checkout_project_branch(self, payload: dict[str, Any]) -> None:
-        """停止服务后切换分支，并把该仓库下的服务都记到同一分支。"""
+    def checkout_project_branch(self, payload: dict[str, Any]) -> bool:
+        """停止服务后切换分支，并把该仓库下的服务都记到同一分支。
+
+        切的是控制台自己的仓库时，同时写入 console.json，返回 True 让页面重启。
+        """
         branch = validate_branch(payload.get("branch"))
         with self.lock:
             project = self.project(payload["project_id"])
@@ -374,16 +383,24 @@ class Manager:
                 roots[root] = service
             if not service_id and len(roots) > 1:
                 raise ValueError("项目包含多个 Git 仓库，请选择要切换的服务")
+            restart = False
             for root, service in roots.items():
                 self.ensure_repo_idle(root)
-                self.ensure_console_switch_allowed(
-                    Path(service["directory"]), branch
-                )
-                actual = checkout_branch(Path(service["directory"]), branch)
-                for item in project["services"]:
-                    if self.git_root(item["directory"]) == root:
-                        item["branch"] = actual
-            self.save()
+                directory = Path(service["directory"])
+                self.ensure_console_switch_allowed(directory, branch)
+                if self.is_console_repo(directory):
+                    actual = checkout_console_branch(directory, branch)
+                    self.save_console_branch(actual)
+                    self.sync_console_project_branches(actual)
+                    self.console_skip_reason = ""
+                    restart = True
+                else:
+                    actual = checkout_branch(directory, branch)
+                    for item in project["services"]:
+                        if self.git_root(item["directory"]) == root:
+                            item["branch"] = actual
+                    self.save()
+            return restart
 
     def saved_console_branch(self) -> str:
         if not self.console_config.exists():
@@ -403,23 +420,47 @@ class Manager:
         )
         temporary.replace(self.console_config)
 
+    def clear_saved_console_branch(self) -> None:
+        """去掉失效的控制台分支记录，下次按默认 dev 启动，不再自己跳回去。"""
+        try:
+            self.console_config.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+    def sync_console_project_branches(self, branch: str) -> None:
+        """右上角和控制台项目卡片共用同一条分支记录。"""
+        root = self.console_root()
+        if not root:
+            return
+        changed = False
+        for project in self.projects:
+            for service in project["services"]:
+                if self.git_root(service["directory"]) == root:
+                    if service.get("branch") != branch:
+                        service["branch"] = branch
+                        changed = True
+        if changed:
+            self.save()
+
     def console_snapshot(self) -> dict[str, Any]:
         """控制台自身的 feat / dev / main 切换状态；只列包含控制台代码的分支。"""
         saved = self.saved_console_branch()
         info = inspect_repo(self.console_dir)
         options = console_branch_options(info)
         names = [item["local_name"] for item in options]
+        current = (info or {}).get("current") or ""
         if saved in names:
             preferred = saved
         elif DEFAULT_CONSOLE_BRANCH in names:
             preferred = DEFAULT_CONSOLE_BRANCH
-        elif info and info.get("current") in names:
-            preferred = info["current"]
+        elif current in names:
+            preferred = current
         else:
             preferred = names[0] if names else ""
+        on_task = current.startswith("agents/")
         return {
             "root": (info or {}).get("root") or "",
-            "current": (info or {}).get("current") or "",
+            "current": current,
             "detached": bool((info or {}).get("detached")),
             "dirty": bool((info or {}).get("dirty")),
             "preferred": preferred,
@@ -427,6 +468,8 @@ class Manager:
             "default": DEFAULT_CONSOLE_BRANCH,
             "warning": (info or {}).get("warning") or "",
             "branches": options,
+            "switchable": not on_task,
+            "skipped": self.console_skip_reason,
         }
 
     def set_console_branch(self, branch: Any) -> str:
@@ -455,34 +498,54 @@ class Manager:
                 )
             if info and info.get("root"):
                 self.ensure_repo_idle(str(info["root"]))
-            actual = checkout_branch(self.console_dir, name)
+            actual = checkout_console_branch(self.console_dir, name)
             self.save_console_branch(actual)
+            self.sync_console_project_branches(actual)
+            self.console_skip_reason = ""
             return actual
 
     def prepare_console_branch(self) -> None:
         """启用控制台时先检出分支：优先保存的选择，没有可用选择时回到默认 dev。"""
+        self.console_skip_reason = ""
         info = inspect_repo(self.console_dir)
         if not info or not info.get("root"):
             return
         current = info.get("current") or ""
         if current.startswith("agents/"):
-            return
+            self.console_skip_reason = (
+                "当前 DevDeck 运行在任务 worktree 中，不能切换 feat、dev 或 main"
+            )
+            raise ValueError(self.console_skip_reason)
+        if info.get("detached"):
+            self.console_skip_reason = "当前处于游离 HEAD，未切换控制台分支"
+            raise ValueError(self.console_skip_reason)
         saved = self.saved_console_branch()
-        if (
-            saved
+        saved_ok = (
+            bool(saved)
             and saved in CONSOLE_BRANCHES
             and console_branch_target(info, saved) is not None
-        ):
+        )
+        if saved_ok:
             if current != saved:
-                self.set_console_branch(saved)
+                try:
+                    self.set_console_branch(saved)
+                except ValueError as error:
+                    self.console_skip_reason = str(error)
+                    raise
             return
-        # 未选择、或保存的分支已不可用（例如只剩 README 的旧 main）时基于默认分支启动。
+        if saved:
+            # 保存的分支已不可用（例如只剩 README 的旧 main），清掉以免日后突然切回去。
+            self.clear_saved_console_branch()
         if current == DEFAULT_CONSOLE_BRANCH:
             return
         if console_branch_target(info, DEFAULT_CONSOLE_BRANCH) is None:
             return
         # 默认分支只在启动时检出，不写入 console.json，选择权仍留给页面。
-        checkout_branch(self.console_dir, DEFAULT_CONSOLE_BRANCH)
+        try:
+            checkout_console_branch(self.console_dir, DEFAULT_CONSOLE_BRANCH)
+        except ValueError as error:
+            self.console_skip_reason = str(error)
+            raise
 
     def fetch_project(self, payload: dict[str, Any]) -> None:
         """只更新远程跟踪引用，用于发现最新分支，不改变当前检出。"""
@@ -735,7 +798,12 @@ def handler_for(manager: Manager) -> type[BaseHTTPRequestHandler]:
                         if payload.get("fetch"):
                             manager.fetch_project(payload)
                         else:
-                            manager.checkout_project_branch(payload)
+                            restart = manager.checkout_project_branch(payload)
+                            body = {"ok": True}
+                            if restart:
+                                body["restart"] = True
+                            self.reply(200, body)
+                            return
                     elif self.path == "/api/console/branch":
                         manager.set_console_branch(payload.get("branch"))
                     else:

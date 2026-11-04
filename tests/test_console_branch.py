@@ -71,6 +71,18 @@ class ConsoleBranchTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "未提交改动"):
             self.manager.prepare_console_branch()
         self.assertEqual(inspect_repo(self.repo)["current"], "feat")
+        snapshot = self.manager.console_snapshot()
+        self.assertIn("未提交改动", snapshot["skipped"])
+        self.assertTrue(snapshot["switchable"])
+
+    def test_detached_head_skips_startup_switch(self) -> None:
+        git(self.repo, "checkout", "--detach")
+        with self.assertRaisesRegex(ValueError, "游离 HEAD"):
+            self.manager.prepare_console_branch()
+        self.assertTrue(inspect_repo(self.repo)["detached"])
+        snapshot = self.manager.console_snapshot()
+        self.assertIn("游离 HEAD", snapshot["skipped"])
+        self.assertTrue(snapshot["switchable"])
 
     def test_switch_to_dev_persists_and_checks_out(self) -> None:
         actual = self.manager.set_console_branch("dev")
@@ -105,8 +117,13 @@ class ConsoleBranchTests(unittest.TestCase):
             self.manager.set_console_branch("dev")
         self.assertEqual(inspect_repo(self.repo)["current"], "agents/task-52")
         self.manager.save_console_branch("dev")
-        self.manager.prepare_console_branch()
+        with self.assertRaisesRegex(ValueError, "任务 worktree"):
+            self.manager.prepare_console_branch()
         self.assertEqual(inspect_repo(self.repo)["current"], "agents/task-52")
+        self.assertEqual(self.manager.saved_console_branch(), "dev")
+        snapshot = self.manager.console_snapshot()
+        self.assertFalse(snapshot["switchable"])
+        self.assertIn("任务 worktree", snapshot["skipped"])
 
     def test_other_branches_are_rejected(self) -> None:
         git(self.repo, "checkout", "-b", "topic")
@@ -194,12 +211,15 @@ class ConsoleBranchTests(unittest.TestCase):
             page = connection.getresponse().read().decode()
             self.assertIn('id="console-branch"', page)
             self.assertIn("控制台启动默认基于 dev", page)
-            self.assertIn("可在右上角切换 feat、dev 或 main", page)
+            self.assertIn("可在右上角或项目卡片切换 feat、dev 或 main", page)
+            self.assertIn("branch-skip", page)
             connection.request("GET", "/api/status")
             body = json.loads(connection.getresponse().read())
             self.assertEqual(body["console"]["preferred"], "dev")
             self.assertEqual(body["console"]["current"], "feat")
             self.assertEqual(body["console"]["default"], "dev")
+            self.assertEqual(body["console"]["skipped"], "")
+            self.assertTrue(body["console"]["switchable"])
             self.assertEqual(
                 [item["local_name"] for item in body["console"]["branches"]],
                 ["feat", "dev", "main"],
@@ -300,7 +320,8 @@ class LegacyMainTests(unittest.TestCase):
         self.manager.prepare_console_branch()
         self.assertEqual(inspect_repo(self.repo)["current"], "dev")
         self.assertEqual(self.manager.console_snapshot()["preferred"], "dev")
-        self.assertEqual(self.manager.saved_console_branch(), "main")
+        self.assertEqual(self.manager.saved_console_branch(), "")
+        self.assertFalse(self.manager.console_config.exists())
 
     def test_legacy_main_not_offered_for_project(self) -> None:
         self.manager.add(
@@ -324,6 +345,181 @@ class LegacyMainTests(unittest.TestCase):
                 {"project_id": project["id"], "branch": "main"}
             )
         self.assertEqual(inspect_repo(self.repo)["current"], "feat")
+
+
+class RemoteMainHasCodeTests(unittest.TestCase):
+    """本地 main 只有 README、远程 main 已有入口文件时，应列出并可切换。"""
+
+    def setUp(self) -> None:
+        self.temporary = TemporaryDirectory()
+        self.root = Path(self.temporary.name)
+        origin = init_repo(self.root / "origin", "main")
+        commit_file(
+            origin, "README.md", "legacy", "init", "2020-01-01T00:00:00"
+        )
+        git(origin, "checkout", "-b", "feat")
+        (origin / "devdeck").mkdir()
+        commit_file(
+            origin,
+            "devdeck/__main__.py",
+            "print('console')",
+            "console",
+            "2021-01-01T00:00:00",
+        )
+        git(origin, "checkout", "-b", "dev")
+        commit_file(
+            origin, "dev.txt", "dev", "dev", "2022-01-01T00:00:00"
+        )
+        git(origin, "checkout", "feat")
+        self.repo = self.root / "console"
+        subprocess.run(
+            ["git", "clone", str(origin), str(self.repo)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        git(self.repo, "config", "user.name", "DevDeck Test")
+        git(self.repo, "config", "user.email", "devdeck@example.com")
+        git(self.repo, "checkout", "feat")
+        git(self.repo, "branch", "main", "origin/main")
+        git(origin, "checkout", "main")
+        (origin / "devdeck").mkdir(exist_ok=True)
+        commit_file(
+            origin,
+            "devdeck/__main__.py",
+            "print('main console')",
+            "main console",
+            "2023-01-01T00:00:00",
+        )
+        git(self.repo, "fetch", "origin")
+        self.manager = Manager(self.root / "data", console_dir=self.repo)
+
+    def tearDown(self) -> None:
+        self.manager.close()
+        self.temporary.cleanup()
+
+    def test_remote_main_with_code_is_listed(self) -> None:
+        snapshot = self.manager.console_snapshot()
+        self.assertEqual(
+            [item["local_name"] for item in snapshot["branches"]],
+            ["feat", "dev", "main"],
+        )
+        main = next(
+            item for item in snapshot["branches"] if item["local_name"] == "main"
+        )
+        self.assertTrue(main["remote"])
+        self.assertEqual(inspect_repo(self.repo)["current"], "feat")
+
+    def test_switch_fast_forwards_local_main_from_remote(self) -> None:
+        actual = self.manager.set_console_branch("main")
+        self.assertEqual(actual, "main")
+        self.assertEqual(inspect_repo(self.repo)["current"], "main")
+        self.assertTrue((self.repo / "devdeck" / "__main__.py").exists())
+        self.assertEqual(self.manager.saved_console_branch(), "main")
+
+    def test_console_project_card_switch_writes_console_json(self) -> None:
+        self.manager.add(
+            {
+                "name": "DevDeck",
+                "backend": {
+                    "directory": str(self.repo),
+                    "command": "sleep 60",
+                    "branch": "feat",
+                },
+            }
+        )
+        project = self.manager.projects[0]
+        restart = self.manager.checkout_project_branch(
+            {"project_id": project["id"], "branch": "main"}
+        )
+        self.assertTrue(restart)
+        self.assertEqual(inspect_repo(self.repo)["current"], "main")
+        self.assertEqual(self.manager.saved_console_branch(), "main")
+        self.assertEqual(project["services"][0]["branch"], "main")
+
+
+class ConsoleProjectSyncTests(unittest.TestCase):
+    """右上角和项目卡片共用 console.json，并同步同一仓库的服务分支。"""
+
+    def setUp(self) -> None:
+        self.temporary = TemporaryDirectory()
+        self.root = Path(self.temporary.name)
+        self.repo = init_repo(self.root / "console", "feat")
+        commit_file(self.repo, "README", "feat", "init", "2020-01-01T00:00:00")
+        (self.repo / "devdeck").mkdir()
+        commit_file(
+            self.repo,
+            "devdeck/__main__.py",
+            "print('console')",
+            "console",
+            "2020-01-02T00:00:00",
+        )
+        git(self.repo, "checkout", "-b", "dev")
+        commit_file(self.repo, "dev.txt", "dev", "dev", "2021-01-01T00:00:00")
+        git(self.repo, "checkout", "feat")
+        git(self.repo, "branch", "main")
+        self.manager = Manager(self.root / "data", console_dir=self.repo)
+        self.manager.add(
+            {
+                "name": "DevDeck",
+                "backend": {
+                    "directory": str(self.repo),
+                    "command": "sleep 60",
+                    "branch": "feat",
+                },
+            }
+        )
+
+    def tearDown(self) -> None:
+        self.manager.close()
+        self.temporary.cleanup()
+
+    def test_set_console_branch_updates_project_service_branch(self) -> None:
+        self.manager.set_console_branch("dev")
+        self.assertEqual(self.manager.saved_console_branch(), "dev")
+        self.assertEqual(
+            self.manager.projects[0]["services"][0]["branch"], "dev"
+        )
+
+    def test_project_card_switch_saves_console_branch_and_asks_restart(self) -> None:
+        project = self.manager.projects[0]
+        restart = self.manager.checkout_project_branch(
+            {"project_id": project["id"], "branch": "dev"}
+        )
+        self.assertTrue(restart)
+        self.assertEqual(inspect_repo(self.repo)["current"], "dev")
+        self.assertEqual(self.manager.saved_console_branch(), "dev")
+        self.assertEqual(project["services"][0]["branch"], "dev")
+
+    def test_http_project_branch_api_marks_console_restart(self) -> None:
+        project = self.manager.projects[0]
+        server = DevDeckServer(("127.0.0.1", 0), self.manager)
+        worker = threading.Thread(target=server.serve_forever)
+        worker.start()
+        try:
+            connection = HTTPConnection(
+                "127.0.0.1", server.server_port, timeout=2
+            )
+            connection.request(
+                "POST",
+                "/api/branch",
+                json.dumps({"project_id": project["id"], "branch": "dev"}),
+                {"Content-Type": "application/json"},
+            )
+            response = connection.getresponse()
+            self.assertEqual(response.status, 200)
+            self.assertEqual(
+                json.loads(response.read()), {"ok": True, "restart": True}
+            )
+            connection.request("GET", "/api/status")
+            after = json.loads(connection.getresponse().read())
+            self.assertEqual(after["console"]["current"], "dev")
+            self.assertEqual(after["console"]["saved"], "dev")
+            connection.close()
+        finally:
+            server.shutdown()
+            server.server_close()
+            worker.join()
 
 
 if __name__ == "__main__":
