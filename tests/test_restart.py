@@ -15,6 +15,8 @@ from http.client import HTTPConnection
 from pathlib import Path
 from unittest.mock import patch
 
+from tests.test_git import commit_file, git, init_repo
+from devdeck.git import inspect_repo
 from devdeck.server import DevDeckServer, Manager
 
 
@@ -36,7 +38,9 @@ def request(port, path, payload=None, headers=None):
 class RestartHTTPTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
-        self.manager = Manager(Path(self.temporary.name))
+        data_dir = Path(self.temporary.name)
+        # 避免测试误切当前工作区的 feat/dev/main。
+        self.manager = Manager(data_dir, console_dir=data_dir)
         self.server = DevDeckServer(("127.0.0.1", 0), self.manager)
         self.worker = threading.Thread(target=self.server.serve_forever)
         self.worker.start()
@@ -99,6 +103,8 @@ class RestartProcessTests(unittest.TestCase):
         environment = os.environ.copy()
         environment["PYTHONPATH"] = str(Path(__file__).resolve().parents[1])
         environment["DEVDECK_RESTART_TEST"] = "preserved"
+        # 真实子进程不要去切开发工作区的控制台分支。
+        environment["DEVDECK_CONSOLE_DIR"] = str(self.root)
         self.process = subprocess.Popen(
             [sys.executable, "-u", "-m", "devdeck", "--port", str(self.port),
              "--data-dir", "relative data"],
@@ -216,6 +222,100 @@ class RestartProcessTests(unittest.TestCase):
                 != before["instance_id"]
             ))
             self.assertIsNone(self.process.poll())
+
+
+@unittest.skipUnless(sys.platform.startswith("linux"), "需要 Linux 进程组")
+class RestartBindProcessTests(unittest.TestCase):
+    """真实重启会在 exec 前绑定最近更新的控制台分支。"""
+
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.root = Path(self.temporary.name)
+        self.repo = init_repo(self.root / "console", "feat")
+        commit_file(self.repo, "README", "feat", "init", "2020-01-01T00:00:00")
+        (self.repo / "devdeck").mkdir()
+        commit_file(
+            self.repo,
+            "devdeck/__main__.py",
+            "print('console')",
+            "console",
+            "2020-01-02T00:00:00",
+        )
+        git(self.repo, "checkout", "-b", "dev")
+        commit_file(self.repo, "dev.txt", "dev", "dev", "2021-01-01T00:00:00")
+        git(self.repo, "checkout", "feat")
+        git(self.repo, "branch", "main")
+        self.port = self.free_port()
+        self.output = (self.root / "console.log").open("wb")
+        environment = os.environ.copy()
+        environment["PYTHONPATH"] = str(Path(__file__).resolve().parents[1])
+        environment["DEVDECK_CONSOLE_DIR"] = str(self.repo)
+        self.data_dir = self.root / "relative data"
+        self.data_dir.mkdir()
+        (self.data_dir / "console.json").write_text(
+            json.dumps({"branch": "feat"}, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        self.process = subprocess.Popen(
+            [sys.executable, "-u", "-m", "devdeck", "--port", str(self.port),
+             "--data-dir", "relative data"],
+            cwd=self.root,
+            env=environment,
+            stdout=self.output,
+            stderr=subprocess.STDOUT,
+        )
+        self.addCleanup(self.cleanup)
+        self.wait_for(lambda: request(self.port, "/api/status")[0] == 200)
+
+    def cleanup(self):
+        if self.process.poll() is None:
+            self.process.terminate()
+            try:
+                self.process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                self.process.kill()
+                self.process.wait(timeout=5)
+        self.output.close()
+        self.temporary.cleanup()
+
+    def free_port(self):
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            return probe.getsockname()[1]
+
+    def wait_for(self, predicate):
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            if self.process.poll() is not None:
+                self.fail((self.root / "console.log").read_text())
+            try:
+                if predicate():
+                    return
+            except (OSError, ValueError):
+                pass
+            time.sleep(0.03)
+        self.fail("等待控制台状态超时：" + (self.root / "console.log").read_text())
+
+    def test_real_restart_checks_out_latest_console_branch(self):
+        self.assertEqual(inspect_repo(self.repo)["current"], "feat")
+        before = request(self.port, "/api/status")[1]
+        self.assertEqual(before["console"]["current"], "feat")
+        self.assertEqual(before["console"]["latest"], "dev")
+        status, accepted = request(self.port, "/api/restart", {})
+        self.assertEqual(status, 202)
+        self.assertEqual(accepted["branch"], "dev")
+        self.wait_for(lambda: (
+            request(self.port, "/api/status")[1]["instance_id"]
+            != before["instance_id"]
+        ))
+        after = request(self.port, "/api/status")[1]
+        self.assertEqual(after["console"]["current"], "dev")
+        self.assertEqual(after["console"]["saved"], "dev")
+        self.assertEqual(inspect_repo(self.repo)["current"], "dev")
+        saved = json.loads((self.data_dir / "console.json").read_text())
+        self.assertEqual(saved["branch"], "dev")
+        log = (self.root / "console.log").read_text()
+        self.assertIn("已绑定控制台分支 dev", log)
 
 
 if __name__ == "__main__":
