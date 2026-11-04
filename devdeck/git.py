@@ -335,8 +335,64 @@ def branch_has_console_code(repo: Path, reference: str) -> bool:
     return result.returncode == 0
 
 
+def _public_branch_option(item: dict[str, Any]) -> dict[str, Any]:
+    """去掉内部排序字段，避免控制台选项把 timestamp 传到页面。"""
+    option = dict(item)
+    option.pop("timestamp", None)
+    option.pop("sort_at", None)
+    return option
+
+
+def _remote_console_option(
+    root: Path,
+    name: str,
+    local: dict[str, Any] | None,
+    remote: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """本地缺入口文件时，找出已 fetch、且包含控制台代码的远程引用。"""
+    refs: list[str] = []
+    if remote:
+        refs.append(remote["name"])
+    if local and local.get("upstream"):
+        refs.append(local["upstream"])
+    refs.append(f"origin/{name}")
+    seen: set[str] = set()
+    for ref in refs:
+        if not ref or ref in seen:
+            continue
+        seen.add(ref)
+        if not branch_has_console_code(root, ref):
+            continue
+        if remote and remote["name"] == ref:
+            return _public_branch_option(remote)
+        commit = (local or {}).get("upstream_commit") or ""
+        updated_at = (local or {}).get("upstream_at") or ""
+        if not commit:
+            try:
+                parsed = run_git(root, "rev-parse", "--short", ref)
+            except (FileNotFoundError, subprocess.TimeoutExpired):
+                parsed = None
+            if parsed is not None and parsed.returncode == 0:
+                commit = parsed.stdout.strip()
+        option = branch_entry(
+            name=ref,
+            local_name=name,
+            commit=commit,
+            timestamp=0,
+            updated_at=updated_at,
+            current=False,
+            remote=True,
+            upstream="",
+        )
+        return _public_branch_option(option)
+    return None
+
+
 def console_branch_options(info: dict[str, Any] | None) -> list[dict[str, Any]]:
-    """控制台只提供包含控制台代码的 feat / dev / main；同名时本地分支优先。"""
+    """控制台只提供包含控制台代码的 feat / dev / main。
+
+    同名时优先本地；本地缺入口文件、已 fetch 的远程有入口文件时改用远程。
+    """
     if not info:
         return []
     root = Path(info["root"]) if info.get("root") else None
@@ -358,11 +414,17 @@ def console_branch_options(info: dict[str, Any] | None) -> list[dict[str, Any]]:
             ),
             None,
         )
-        match = local or remote
-        if match and (
-            root is None or branch_has_console_code(root, match["name"])
-        ):
-            options.append(match)
+        if root is None:
+            match = local or remote
+            if match:
+                options.append(_public_branch_option(match))
+            continue
+        if local and branch_has_console_code(root, local["name"]):
+            options.append(_public_branch_option(local))
+            continue
+        remote_option = _remote_console_option(root, name, local, remote)
+        if remote_option:
+            options.append(remote_option)
     return options
 
 
@@ -370,50 +432,83 @@ def console_branch_target(
     info: dict[str, Any] | None, branch: str
 ) -> dict[str, Any] | None:
     """只在包含控制台代码的可选分支中查找目标，兼容远程引用写法。"""
+    options = console_branch_options(info)
+    exact = next(
+        (
+            item
+            for item in options
+            if item["name"] == branch or item["local_name"] == branch
+        ),
+        None,
+    )
+    if exact is not None:
+        return exact
     target = resolve_branch_target(info, branch) if info else None
     if target is None:
         return None
     return next(
         (
             item
-            for item in console_branch_options(info)
+            for item in options
             if item["local_name"] == target["local_name"]
         ),
         None,
     )
 
 
+def _console_local_name(info: dict[str, Any] | None, branch: str) -> str:
+    """把 origin/main 这类远程写法折成 feat/dev/main 本地名。"""
+    if branch in CONSOLE_BRANCHES:
+        return branch
+    resolved = resolve_branch_target(info, branch) if info else None
+    if resolved and resolved["local_name"] in CONSOLE_BRANCHES:
+        return resolved["local_name"]
+    for name in CONSOLE_BRANCHES:
+        if branch.endswith(f"/{name}"):
+            return name
+    return ""
+
+
 def console_branch_rejection(
     info: dict[str, Any] | None, branch: str
 ) -> str:
     """生成控制台分支被拒绝时的提示，区分分支不存在和旧 main 缺代码。"""
-    if branch not in CONSOLE_BRANCHES:
+    name = _console_local_name(info, branch)
+    if not name:
         return CONSOLE_BRANCH_ERROR
     if any(
-        item["local_name"] == branch
+        item["local_name"] == name
+        for item in (info or {}).get("branches", [])
+    ) or any(
+        item.get("upstream") == branch or item["name"] == branch
         for item in (info or {}).get("branches", [])
     ):
-        return f"分支 {branch} 不包含 DevDeck 代码，不能切换"
-    return f"找不到分支 {branch}"
+        return f"分支 {name} 不包含 DevDeck 代码，不能切换"
+    return f"找不到分支 {name}"
 
 
 def restrict_console_branches(info: dict[str, Any] | None) -> dict[str, Any] | None:
     """把控制台仓库的分支视图裁剪到 feat / dev / main，避免项目卡片列出 agents 分支。"""
     if not info:
         return info
-    allowed = {item["name"] for item in console_branch_options(info)}
-    branches = [
-        dict(item)
-        for item in info.get("branches", [])
-        if item["name"] in allowed
-    ]
-    for item in branches:
+    options = [dict(item) for item in console_branch_options(info)]
+    order: dict[str, int] = {}
+    for index, item in enumerate(info.get("branches", [])):
+        order.setdefault(item["local_name"], index)
+        order.setdefault(item["name"], index)
+    options.sort(
+        key=lambda item: (
+            order.get(item["local_name"], order.get(item["name"], 999)),
+            item["local_name"],
+        )
+    )
+    for item in options:
         item["latest"] = False
-    latest = branches[0]["name"] if branches else ""
-    if branches:
-        branches[0]["latest"] = True
+    latest = options[0]["name"] if options else ""
+    if options:
+        options[0]["latest"] = True
     result = dict(info)
-    result["branches"] = branches
+    result["branches"] = options
     result["latest"] = latest
     return result
 
@@ -440,6 +535,61 @@ def resolve_branch_target(info: dict[str, Any], branch: str) -> dict[str, Any] |
         None,
     )
     return local or remote
+
+
+def checkout_console_branch(directory: Path, branch: str) -> str:
+    """切到包含控制台代码的 feat / dev / main；本地缺入口文件时按远程快进。"""
+    name = validate_branch(branch)
+    info = inspect_repo(directory)
+    if info is None or not info["root"]:
+        raise ValueError(
+            info["warning"] if info and info.get("warning") else "服务目录不是 Git 仓库"
+        )
+    if info["warning"] and not info["branches"]:
+        raise ValueError(info["warning"])
+    target = console_branch_target(info, name)
+    if target is None:
+        raise ValueError(console_branch_rejection(info, name))
+    local_name = target["local_name"]
+    if info["dirty"]:
+        raise ValueError("工作区有未提交改动，无法切换分支")
+    repo = Path(info["root"])
+    local_exists = any(
+        item["local_name"] == local_name and not item["remote"]
+        for item in info["branches"]
+    )
+    try:
+        if not target["remote"]:
+            if info["current"] == local_name:
+                return local_name
+            result = run_git(repo, "checkout", local_name, timeout=10)
+        elif not local_exists:
+            result = run_git(
+                repo, "checkout", "--track", target["name"], timeout=10
+            )
+        else:
+            if info["current"] != local_name:
+                switched = run_git(repo, "checkout", local_name, timeout=10)
+                if switched.returncode != 0:
+                    raise ValueError(f"切换分支失败：{public_git_error(switched)}")
+            if branch_has_console_code(repo, local_name):
+                return local_name
+            result = run_git(
+                repo, "merge", "--ff-only", target["name"], timeout=10
+            )
+    except FileNotFoundError as error:
+        raise ValueError("未安装 Git，无法切换分支") from error
+    except subprocess.TimeoutExpired as error:
+        raise ValueError("切换分支超时") from error
+    if result.returncode != 0:
+        if target["remote"] and local_exists:
+            raise ValueError(
+                f"本地 {local_name} 不包含 DevDeck 代码，且无法快进到远程："
+                f"{public_git_error(result)}"
+            )
+        raise ValueError(f"切换分支失败：{public_git_error(result)}")
+    current = inspect_repo(directory)
+    return (current or {}).get("current") or local_name
 
 
 def checkout_branch(directory: Path, branch: str) -> str:
